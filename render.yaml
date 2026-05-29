@@ -18,7 +18,8 @@ services:
       - key: AZURE_AI_API_KEY
         sync: false
 
-  - type: static
+  - type: web
+    runtime: static
     name: news-chart-frontend
     rootDir: frontend
     buildCommand: npm install && npm run build
@@ -38,7 +39,7 @@ services:
     name: read-news-cron
     runtime: python
     region: oregon
-    schedule: "*/10 * * * *"
+    schedule: "*/15 * * * *"
     startCommand: curl -X POST $API_BASE_URL/api/read-news
     envVars:
       - key: API_BASE_URL
@@ -51,7 +52,7 @@ services:
     name: update-prices-cron
     runtime: python
     region: oregon
-    schedule: "*/15 * * * *"
+    schedule: "0 * * * *"
     startCommand: curl -X POST $API_BASE_URL/api/update-prices
     envVars:
       - key: API_BASE_URL
