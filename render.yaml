@@ -30,33 +30,30 @@ services:
         value: public, max-age=0, must-revalidate
     envVars:
       - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: news-chart-api
-          property: url
+        sync: false
 
   - type: cron
     name: read-news-cron
     runtime: python
     region: oregon
     schedule: "*/15 * * * *"
-    startCommand: curl -X POST $API_BASE_URL/api/read-news
+    startCommand: curl -X POST https://$API_HOST/api/read-news
     envVars:
-      - key: API_BASE_URL
+      - key: API_HOST
         fromService:
           type: web
           name: news-chart-api
-          property: url
+          property: hostport
 
   - type: cron
     name: update-prices-cron
     runtime: python
     region: oregon
     schedule: "0 * * * *"
-    startCommand: curl -X POST $API_BASE_URL/api/update-prices
+    startCommand: curl -X POST https://$API_HOST/api/update-prices
     envVars:
-      - key: API_BASE_URL
+      - key: API_HOST
         fromService:
           type: web
           name: news-chart-api
-          property: url
+          property: hostport
