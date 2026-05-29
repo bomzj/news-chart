@@ -2,6 +2,7 @@ services:
   - type: web
     name: news-chart-api
     runtime: python
+    plan: free # <-- Added this to enforce the free tier
     region: oregon
     rootDir: backend
     buildCommand: uv sync
@@ -32,28 +33,3 @@ services:
       - key: NEXT_PUBLIC_API_URL
         sync: false
 
-  - type: cron
-    name: read-news-cron
-    runtime: python
-    region: oregon
-    schedule: "*/15 * * * *"
-    startCommand: curl -X POST https://$API_HOST/api/read-news
-    envVars:
-      - key: API_HOST
-        fromService:
-          type: web
-          name: news-chart-api
-          property: hostport
-
-  - type: cron
-    name: update-prices-cron
-    runtime: python
-    region: oregon
-    schedule: "0 * * * *"
-    startCommand: curl -X POST https://$API_HOST/api/update-prices
-    envVars:
-      - key: API_HOST
-        fromService:
-          type: web
-          name: news-chart-api
-          property: hostport
