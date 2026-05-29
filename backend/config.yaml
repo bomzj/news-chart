@@ -1,0 +1,29 @@
+tickers:
+  - BTC
+
+dedup:
+  cosine_threshold: 0.90
+  lookback_hours: 24
+
+agents:
+  confidence_threshold: 0.75
+  nano_deployment: gpt-5.4-nano
+  mini_deployment: gpt-5.4-mini
+  api_version: "2025-04-01-preview"
+  reasoning_effort: high
+
+embeddings:
+  deployment: text-embedding-3-large
+  dimensions: 256
+  api_version: "2023-05-15"
+
+pipeline:
+  fetch_news_interval_minutes: 10
+  max_full_text_chars: 2000
+
+price_updater:
+  deltas:
+    - 1h
+    - 24h
+    - 7d
+    - 30d

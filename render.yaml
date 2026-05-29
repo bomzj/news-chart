@@ -1,0 +1,61 @@
+services:
+  - type: web
+    name: news-chart-api
+    runtime: python
+    region: oregon
+    rootDir: backend
+    buildCommand: uv sync
+    startCommand: uv run uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MARKETAUX_API_KEY
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: AZURE_AI_ENDPOINT
+        sync: false
+      - key: AZURE_AI_API_KEY
+        sync: false
+
+  - type: static
+    name: news-chart-frontend
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: out
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: news-chart-api
+          property: url
+
+  - type: cron
+    name: read-news-cron
+    runtime: python
+    region: oregon
+    schedule: "*/10 * * * *"
+    startCommand: curl -X POST $API_BASE_URL/api/read-news
+    envVars:
+      - key: API_BASE_URL
+        fromService:
+          type: web
+          name: news-chart-api
+          property: url
+
+  - type: cron
+    name: update-prices-cron
+    runtime: python
+    region: oregon
+    schedule: "*/15 * * * *"
+    startCommand: curl -X POST $API_BASE_URL/api/update-prices
+    envVars:
+      - key: API_BASE_URL
+        fromService:
+          type: web
+          name: news-chart-api
+          property: url
