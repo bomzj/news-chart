@@ -30,6 +30,10 @@ services:
         name: Cache-Control
         value: public, max-age=0, must-revalidate
     envVars:
+      # Tell Render to grab the public URL from your Python API
       - key: NEXT_PUBLIC_API_URL
-        sync: false
+        fromService:
+          type: web
+          name: news-chart-api
+          envVarKey: RENDER_EXTERNAL_URL
 
