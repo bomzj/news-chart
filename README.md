@@ -387,8 +387,8 @@ frontend/
 The `render.yaml` at the repo root defines:
 - **Web service**: FastAPI app serving pipeline + chart API endpoints
 - **Static site**: Next.js frontend (static export to `out/`)
-- **Cron job (10 min)**: hits `/api/read-news`
-- **Cron job (15 min)**: hits `/api/update-prices`
+- **Cron job (15 min)**: hits `/api/read-news`
+- **Cron job (60 min)**: hits `/api/update-prices`
 
 Set all environment variables in the Render dashboard:
 - Backend: `MARKETAUX_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`
