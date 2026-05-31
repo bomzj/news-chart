@@ -4,7 +4,7 @@ import json
 import httpx
 
 from src.config import app_config, secrets
-from src.news_pipeline.models import AnalysisInput, AnalysisOutput
+from src.news_pipeline.models import AnalysisInput, AnalysisOutput, AnalysisState
 
 
 ANALYST_SYSTEM_PROMPT = """You are a crypto news analyst filtering signal from noise. Your job: decide if a news article can realistically drive the price of the coin, and if yes — classify it.
@@ -90,7 +90,6 @@ async def _call_llm(deployment: str, user_prompt: str) -> dict:
 
     url = f"{sec.azure_ai_endpoint}/openai/responses?api-version={cfg.api_version}"
 
-    # Reasoning models with high effort can take 60s+ to respond
     async with httpx.AsyncClient() as client:
         response = await client.post(
             url,
@@ -109,7 +108,6 @@ async def _call_llm(deployment: str, user_prompt: str) -> dict:
         response.raise_for_status()
         output = response.json()["output"]
 
-    # Extract text from the first output message
     for item in output:
         if item["type"] == "message":
             for content in item["content"]:
@@ -121,42 +119,30 @@ async def _call_llm(deployment: str, user_prompt: str) -> dict:
 
 async def analyze_single(input: AnalysisInput) -> AnalysisOutput | None:
     """
-    LangGraph-style routing: junior analyst first, escalate to senior if low confidence.
+    Run the LangGraph analyst graph for a single news item.
+    Junior analyst first, conditional escalation to senior if low confidence.
     Returns None if the news is discarded as noise.
     """
-    cfg = app_config().agents
+    from src.news_pipeline.graph import analysis_graph
+
     user_prompt = _build_user_prompt(input)
 
-    # Junior analyst (cheap model)
-    junior_result = await _call_llm(cfg.nano_deployment, user_prompt)
+    initial_state: AnalysisState = {"user_prompt": user_prompt}
+    final_state = await analysis_graph.ainvoke(initial_state)
 
-    if junior_result.get("discard"):
-        return None
-
-    if junior_result.get("confidence", 0) >= cfg.confidence_threshold:
-        return AnalysisOutput(
-            news_summary=junior_result["news_summary"][:400],
-            sentiment=junior_result["sentiment"],
-            impact=junior_result["impact"],
-            confidence=junior_result["confidence"],
-            predicted_by_model=cfg.nano_deployment,
-        )
-
-    # Escalate to senior analyst (more expensive model)
-    senior_result = await _call_llm(cfg.mini_deployment, user_prompt)
-
-    if senior_result.get("discard"):
+    result = final_state.get("llm_result")
+    if result is None or result.get("discard"):
         return None
 
     return AnalysisOutput(
-        news_summary=senior_result["news_summary"][:400],
-        sentiment=senior_result["sentiment"],
-        impact=senior_result["impact"],
-        confidence=senior_result["confidence"],
-        predicted_by_model=cfg.mini_deployment,
+        news_summary=result["news_summary"][:400],
+        sentiment=result["sentiment"],
+        impact=result["impact"],
+        confidence=result["confidence"],
+        predicted_by_model=final_state["predicted_by_model"],
     )
 
 
 async def analyze_batch(inputs: list[AnalysisInput]) -> list[AnalysisOutput | None]:
-    """Run all news analyses in parallel. None entries = discarded noise."""
+    """Run all news analyses in parallel via LangGraph. None entries = discarded noise."""
     return await asyncio.gather(*[analyze_single(inp) for inp in inputs])

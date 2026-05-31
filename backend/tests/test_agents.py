@@ -23,9 +23,9 @@ def _make_input(title: str = "Fed cuts rates") -> AnalysisInput:
 
 @pytest.mark.asyncio
 class TestAgentRouting:
-    @patch("src.news_pipeline.agents._call_llm")
+    @patch("src.news_pipeline.graph._call_llm")
     async def test_high_confidence_stays_junior(self, mock_llm):
-        """Junior result with confidence ≥ 0.75 is returned directly."""
+        """Junior result with confidence ≥ 0.75 is returned directly (no senior invocation)."""
         mock_llm.return_value = {
             "news_summary": "Fed cuts rates, bullish for crypto",
             "sentiment": "bullish",
@@ -40,9 +40,9 @@ class TestAgentRouting:
         assert result.confidence == 0.85
         assert mock_llm.call_count == 1
 
-    @patch("src.news_pipeline.agents._call_llm")
+    @patch("src.news_pipeline.graph._call_llm")
     async def test_low_confidence_escalates_to_senior(self, mock_llm):
-        """Junior result with confidence < 0.75 escalates to senior."""
+        """Junior result with confidence < 0.75 escalates to senior via LangGraph routing."""
         mock_llm.side_effect = [
             # Junior: low confidence
             {
@@ -68,7 +68,7 @@ class TestAgentRouting:
         assert result.sentiment == "bearish"
         assert mock_llm.call_count == 2
 
-    @patch("src.news_pipeline.agents._call_llm")
+    @patch("src.news_pipeline.graph._call_llm")
     async def test_output_schema_valid(self, mock_llm):
         """Output conforms to AnalysisOutput schema."""
         mock_llm.return_value = {
@@ -86,7 +86,7 @@ class TestAgentRouting:
         assert 0.0 <= result.confidence <= 1.0
         assert len(result.news_summary) <= 400
 
-    @patch("src.news_pipeline.agents._call_llm")
+    @patch("src.news_pipeline.graph._call_llm")
     async def test_summary_truncated_to_400_chars(self, mock_llm):
         """Summary longer than 400 chars gets truncated."""
         mock_llm.return_value = {
@@ -100,7 +100,7 @@ class TestAgentRouting:
         assert result is not None
         assert len(result.news_summary) <= 400
 
-    @patch("src.news_pipeline.agents._call_llm")
+    @patch("src.news_pipeline.graph._call_llm")
     async def test_discard_returns_none(self, mock_llm):
         """LLM returning discard=true results in None (noise filtered)."""
         mock_llm.return_value = {"discard": True}
@@ -110,7 +110,7 @@ class TestAgentRouting:
         assert result is None
         assert mock_llm.call_count == 1
 
-    @patch("src.news_pipeline.agents._call_llm")
+    @patch("src.news_pipeline.graph._call_llm")
     async def test_senior_discard_returns_none(self, mock_llm):
         """If junior has low confidence and senior discards, result is None."""
         mock_llm.side_effect = [
@@ -127,3 +127,14 @@ class TestAgentRouting:
 
         assert result is None
         assert mock_llm.call_count == 2
+
+
+class TestGraphCompilation:
+    def test_graph_compiles_and_has_expected_nodes(self):
+        """The LangGraph analyst graph compiles with correct node structure."""
+        from src.news_pipeline.graph import analysis_graph
+
+        graph_nodes = analysis_graph.get_graph().nodes
+        node_ids = set(graph_nodes.keys())
+        assert "junior_analyst" in node_ids
+        assert "senior_analyst" in node_ids

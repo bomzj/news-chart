@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, TypedDict
 
 from pydantic import BaseModel
 
@@ -15,4 +15,11 @@ class AnalysisOutput(BaseModel):
     sentiment: Sentiment
     impact: Impact
     confidence: float
+    predicted_by_model: str
+
+
+class AnalysisState(TypedDict, total=False):
+    """LangGraph state flowing through the analyst graph."""
+    user_prompt: str
+    llm_result: dict | None
     predicted_by_model: str

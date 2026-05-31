@@ -8,10 +8,10 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 
 1. **Ingests news** from MarketAux API for configured crypto tickers (e.g. BTC)
 2. **Deduplicates** using cosine similarity on embeddings — both within the current batch and against the last 24h in the vector DB
-3. **Analyzes & filters** via a LangGraph agent hierarchy:
+3. **Analyzes & filters** via a LangGraph `StateGraph` (conditional routing):
    - Junior analyst (GPT-5 Nano) evaluates each news item in parallel
    - Noise/unimportant news is **discarded** (never stored) — only price-driving news is kept
-   - If confidence < threshold → escalates to Senior analyst (GPT-5 Mini)
+   - If confidence < threshold → graph routes to Senior analyst (GPT-5 Mini)
 4. **Snapshots price** from Binance perpetual futures at ingestion time
 5. **Stores enriched vectors** in Qdrant Cloud with full metadata
 6. **Backfills realized price deltas** (1h, 24h, 7d, 30d) via a separate cron-triggered endpoint
@@ -56,7 +56,8 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 │         │  ┌─────────────┐   │   ┌─────────────┐  │            │
 │         │  │ fetch_news  │   │   │ updater     │  │            │
 │         │  │ dedup       │   │   │ (delta calc)│  │            │
-│         │  │ agents      │   │   └──────┬──────┘  │            │
+│         │  │ graph (LG)  │   │   └──────┬──────┘  │            │
+│         │  │ agents      │   │          │         │            │
 │         │  │ store       │   │          │         │            │
 │         │  └──────┬──────┘   │          │         │            │
 │         │         │          │          │         │            │
@@ -110,10 +111,16 @@ RAG dedup vs Qdrant (last 24h, cosine ≥ 0.90 → discard)
 Attach similar past news as context (with realized price data)
        │
        ▼
-LangGraph parallel fan-out:
-  ├── Junior Agent (GPT-5 Nano) → discard OR (sentiment, impact, confidence, summary)
-  │     └── if confidence < 0.75 → Senior Agent (GPT-5 Mini)
-  │     └── if discard=true → news is dropped (never stored)
+LangGraph StateGraph (graph.py):
+  ┌─────────────────────────────────────────────────────────┐
+  │ START → junior_analyst (GPT-5 Nano)                     │
+  │           │                                             │
+  │           ├── discard=true → END (news dropped)         │
+  │           ├── confidence ≥ 0.75 → END (result kept)     │
+  │           └── confidence < 0.75 → senior_analyst        │
+  │                                    (GPT-5 Mini) → END   │
+  └─────────────────────────────────────────────────────────┘
+  Batch: asyncio.gather over graph.ainvoke() per news item
        │
        ▼
 Fetch Binance mark price (BTCUSDT perpetual) — only for kept news
