@@ -1,10 +1,8 @@
 import asyncio
-import json
 import logging
 
-import httpx
-
 from src.config import app_config, secrets
+from src.shared.http import http_client
 
 logger = logging.getLogger(__name__)
 
@@ -38,22 +36,22 @@ async def _condense_single(text: str, limit: int) -> str:
     )
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url,
-                headers={"api-key": sec.azure_ai_api_key},
-                json={
-                    "model": cfg.nano_deployment,
-                    "input": [
-                        {"role": "system", "content": CONDENSE_SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                },
-                # Condensation is a simple task, 60s is generous
-                timeout=60.0,
-            )
-            response.raise_for_status()
-            output = response.json()["output"]
+        client = await http_client()
+        response = await client.post(
+            url,
+            headers={"api-key": sec.azure_ai_api_key},
+            json={
+                "model": cfg.nano_deployment,
+                "input": [
+                    {"role": "system", "content": CONDENSE_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+            },
+            # Condensation is a simple task, 60s is generous
+            timeout=60.0,
+        )
+        response.raise_for_status()
+        output = response.json()["output"]
 
         for item in output:
             if item["type"] == "message":
@@ -66,6 +64,6 @@ async def _condense_single(text: str, limit: int) -> str:
         logger.warning("No text output from condense LLM, truncating instead")
         return text[:limit]
 
-    except (httpx.HTTPError, httpx.TimeoutException, json.JSONDecodeError) as exc:
+    except Exception as exc:
         logger.warning("Condense LLM failed: %s, truncating instead", exc)
         return text[:limit]

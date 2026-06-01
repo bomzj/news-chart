@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.news_pipeline.router import router as news_router
 from src.price_updater.router import router as price_router
 from src.chart.router import router as chart_router
+from src.shared.http import close_http_client
 from src.shared.qdrant import ensure_collection
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,11 @@ async def startup():
         await ensure_collection()
     except Exception as exc:
         logger.warning("Failed to ensure Qdrant indexes on startup: %s", exc)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await close_http_client()
 
 
 @app.get("/health")

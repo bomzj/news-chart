@@ -1,8 +1,7 @@
 import logging
 
-import httpx
-
 from src.config import secrets
+from src.shared.http import http_client
 from src.news_pipeline.extract import extract_full_texts
 from src.news_pipeline.condense import condense_texts
 from src.shared.types import RawNews
@@ -26,19 +25,19 @@ async def fetch_news(ticker: str) -> list[RawNews]:
     sec = secrets()
     symbol = _marketaux_symbol(ticker)
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://api.marketaux.com/v1/news/all",
-            params={
-                "symbols": symbol,
-                "filter_entities": "true",
-                "language": "en",
-                "api_token": sec.marketaux_api_key,
-            },
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        data = response.json()
+    client = await http_client()
+    response = await client.get(
+        "https://api.marketaux.com/v1/news/all",
+        params={
+            "symbols": symbol,
+            "filter_entities": "true",
+            "language": "en",
+            "api_token": sec.marketaux_api_key,
+        },
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    data = response.json()
 
     articles = data.get("data", [])
     full_texts = await extract_full_texts(articles)

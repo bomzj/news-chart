@@ -1,9 +1,8 @@
 import asyncio
 import json
 
-import httpx
-
 from src.config import app_config, secrets
+from src.shared.http import http_client
 from src.news_pipeline.models import AnalysisInput, AnalysisOutput, AnalysisState
 
 
@@ -90,23 +89,23 @@ async def _call_llm(deployment: str, user_prompt: str) -> dict:
 
     url = f"{sec.azure_ai_endpoint}/openai/responses?api-version={cfg.api_version}"
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            url,
-            headers={"api-key": sec.azure_ai_api_key},
-            json={
-                "model": deployment,
-                "input": [
-                    {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "reasoning": {"effort": cfg.reasoning_effort},
-                "text": {"format": {"type": "json_object"}},
-            },
-            timeout=120.0,
-        )
-        response.raise_for_status()
-        output = response.json()["output"]
+    client = await http_client()
+    response = await client.post(
+        url,
+        headers={"api-key": sec.azure_ai_api_key},
+        json={
+            "model": deployment,
+            "input": [
+                {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            "reasoning": {"effort": cfg.reasoning_effort},
+            "text": {"format": {"type": "json_object"}},
+        },
+        timeout=120.0,
+    )
+    response.raise_for_status()
+    output = response.json()["output"]
 
     for item in output:
         if item["type"] == "message":

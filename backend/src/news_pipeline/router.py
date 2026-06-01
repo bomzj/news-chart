@@ -24,8 +24,7 @@ async def _run_pipeline():
     cfg = app_config()
     await ensure_collection()
 
-    all_records: list[NewsRecord] = []
-    all_embeddings: list[list[float]] = []
+    total_processed = 0
     discarded_count = 0
 
     for ticker in cfg.tickers:
@@ -60,8 +59,8 @@ async def _run_pipeline():
         texts = [f"{n.title} {n.description}" for (n, _), _ in kept]
         embeddings = await embed_texts(texts)
 
-        for ((news, _), result), embedding in zip(kept, embeddings):
-            record = NewsRecord(
+        records = [
+            NewsRecord(
                 ticker=ticker,
                 source=news.source,
                 published_at=news.published_at,
@@ -73,15 +72,15 @@ async def _run_pipeline():
                 predicted_by_model=result.predicted_by_model,
                 price_at_ingestion=current_price,
             )
-            all_records.append(record)
-            all_embeddings.append(embedding)
+            for ((news, _), result), embedding in zip(kept, embeddings)
+        ]
 
-    if all_records:
-        await store_news_batch(all_records, all_embeddings)
+        await store_news_batch(records, embeddings)
+        total_processed += len(records)
 
     logger.info(
         "Pipeline finished: processed=%d discarded=%d tickers=%s",
-        len(all_records),
+        total_processed,
         discarded_count,
         cfg.tickers,
     )

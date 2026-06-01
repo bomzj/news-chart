@@ -1,8 +1,10 @@
 import asyncio
+import gc
 import logging
 
-import httpx
 import trafilatura
+
+from src.shared.http import http_client
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +16,7 @@ async def extract_full_texts(articles: list[dict]) -> list[str | None]:
     """
     Fetch and extract full article text from URLs in parallel.
     Returns None for articles whose URL is unavailable (4xx, 5xx, timeout).
+    Runs gc.collect() after all extractions to free lxml DOM trees retained by trafilatura.
     """
     semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
 
@@ -27,24 +30,26 @@ async def extract_full_texts(articles: list[dict]) -> list[str | None]:
         async with semaphore:
             return await _fetch_and_extract(url)
 
-    return await asyncio.gather(*[_extract_one(a) for a in articles])
+    results = await asyncio.gather(*[_extract_one(a) for a in articles])
+    gc.collect()
+    return results
 
 
 async def _fetch_and_extract(url: str) -> str | None:
     """Fetch HTML page and extract main text content via trafilatura.
     Returns None when the URL is unreachable or content extraction fails."""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                url,
-                timeout=_FETCH_TIMEOUT,
-                follow_redirects=True,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; NewsPipeline/1.0)"},
-            )
-            response.raise_for_status()
-            html = response.text
+        client = await http_client()
+        response = await client.get(
+            url,
+            timeout=_FETCH_TIMEOUT,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; NewsPipeline/1.0)"},
+        )
+        response.raise_for_status()
+        html = response.text
 
         text = trafilatura.extract(html, include_comments=False, include_tables=False)
+        del html
 
         if text and len(text) > 50:
             return text
@@ -52,9 +57,6 @@ async def _fetch_and_extract(url: str) -> str | None:
         logger.warning("Extraction too short for %s, skipping", url)
         return None
 
-    except (httpx.HTTPError, httpx.TimeoutException) as exc:
-        logger.warning("Failed to fetch %s: %s, skipping", url, exc)
-        return None
     except Exception as exc:
-        logger.warning("Extraction error for %s: %s, skipping", url, exc)
+        logger.warning("Failed to extract %s: %s, skipping", url, exc)
         return None
