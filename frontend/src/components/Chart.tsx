@@ -40,6 +40,7 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const fetchingOlderRef = useRef(false);
+  const initialLoadDoneRef = useRef(false);
 
   const backendTicker = ticker.replace(/usdt$/i, "").toUpperCase();
 
@@ -111,6 +112,7 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
 
     async function load() {
       setLoading(true);
+      initialLoadDoneRef.current = false;
       try {
         const klines = await fetchKlines(ticker, timeframe);
         if (cancelled || !seriesRef.current) return;
@@ -126,6 +128,8 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
 
         seriesRef.current.setData(data);
         chartRef.current?.timeScale().fitContent();
+        // Allow infinite scroll only after initial layout settles
+        setTimeout(() => { initialLoadDoneRef.current = true; }, 500);
       } catch (err) {
         console.error("Failed to load klines:", err);
       } finally {
@@ -211,7 +215,7 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
     if (!chart || !series) return;
 
     const handler = (range: LogicalRange | null) => {
-      if (!range || fetchingOlderRef.current) return;
+      if (!range || fetchingOlderRef.current || !initialLoadDoneRef.current) return;
 
       // Trigger when user scrolls within 10 bars of the left edge
       if (range.from > 10) return;

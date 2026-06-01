@@ -11,7 +11,7 @@ const INTERVAL_MAP: Record<Timeframe, string> = {
 };
 
 // Default number of candles to load initially
-const DEFAULT_CANDLE_COUNT = 500;
+const DEFAULT_CANDLE_COUNT = 200;
 
 // Candle duration in ms
 const CANDLE_MS: Record<Timeframe, number> = {
@@ -36,38 +36,25 @@ export async function fetchKlines(
   const effectiveStart =
     startTime ?? effectiveEnd - DEFAULT_CANDLE_COUNT * CANDLE_MS[timeframe];
 
-  const allKlines: Kline[] = [];
-  let currentStart = effectiveStart;
+  const url = new URL(BINANCE_FAPI);
+  url.searchParams.set("symbol", symbol.toUpperCase());
+  url.searchParams.set("interval", interval);
+  url.searchParams.set("startTime", String(effectiveStart));
+  url.searchParams.set("endTime", String(effectiveEnd));
+  url.searchParams.set("limit", String(DEFAULT_CANDLE_COUNT));
 
-  while (currentStart < effectiveEnd) {
-    const url = new URL(BINANCE_FAPI);
-    url.searchParams.set("symbol", symbol.toUpperCase());
-    url.searchParams.set("interval", interval);
-    url.searchParams.set("startTime", String(currentStart));
-    url.searchParams.set("endTime", String(effectiveEnd));
-    url.searchParams.set("limit", "1500");
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Binance API error: ${res.status}`);
 
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error(`Binance API error: ${res.status}`);
+  const data: number[][] = await res.json();
 
-    const data: number[][] = await res.json();
-    if (data.length === 0) break;
-
-    for (const k of data) {
-      allKlines.push({
-        time: Math.floor(k[0] / 1000), // ms → seconds
-        open: Number(k[1]),
-        high: Number(k[2]),
-        low: Number(k[3]),
-        close: Number(k[4]),
-      });
-    }
-
-    // Move past the last candle
-    currentStart = data[data.length - 1][0] + 1;
-  }
-
-  return allKlines;
+  return data.map((k) => ({
+    time: Math.floor(k[0] / 1000),
+    open: Number(k[1]),
+    high: Number(k[2]),
+    low: Number(k[3]),
+    close: Number(k[4]),
+  }));
 }
 
 /** Returns the candle duration in seconds for a given timeframe. */
