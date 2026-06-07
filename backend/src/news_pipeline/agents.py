@@ -74,9 +74,12 @@ def _build_user_prompt(input: AnalysisInput) -> str:
             sentiment = ctx.get("sentiment", "N/A")
             delta_1h = ctx.get("realized_price_delta_pct_1h")
             delta_24h = ctx.get("realized_price_delta_pct_24h")
+            delta_7d = ctx.get("realized_price_delta_pct_7d")
+            delta_30d = ctx.get("realized_price_delta_pct_30d")
             parts.append(
                 f"- {summary} (sentiment={sentiment}, "
-                f"1h_delta={delta_1h}, 24h_delta={delta_24h})"
+                f"1h_delta={delta_1h}, 24h_delta={delta_24h}, "
+                f"7d_delta={delta_7d}, 30d_delta={delta_30d})"
             )
 
     return "\n".join(parts)
