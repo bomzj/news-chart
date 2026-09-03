@@ -27,7 +27,8 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 | Embeddings | Azure AI text-embedding-3-large (256 dims) |
 | Price Data | Binance USDⓈ-M Futures API |
 | News Source | MarketAux API |
-| Hosting | Render (web service + cron jobs) |
+| Hosting | Render (back-end web service + front end) |
+| Cron | https://cron-job.org |
 | Language | Python 3.14 |
 | Toolchain | uv |
 
@@ -39,12 +40,12 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────────┐     ┌──────────────┐                         │
-│  │ Cron: 10 min │────▶│ POST         │                         │
+│  │ Cron: 15 min │────▶│ POST         │                         │
 │  │ read-news    │     │ /api/read-news│                         │
 │  └──────────────┘     └──────┬───────┘                         │
 │                              │                                  │
 │  ┌──────────────┐     ┌──────┴────────┐                        │
-│  │ Cron: 15 min │────▶│ POST          │                        │
+│  │ Cron: 10 min │────▶│ POST          │                        │
 │  │ update-prices│     │/api/update-   │                        │
 │  └──────────────┘     │    prices     │                        │
 │                       └──────┬────────┘                        │
@@ -81,10 +82,14 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
   │ (news feed) │
   └─────────────┘
 ```
+**Warning** Render on free tier shutdowns a web service after 15 minutes of receiving no incoming requests, so we trigger our back end at least every 10 minutes via cron job.
+To be more precise we call via /api/update-prices every 10 minutes which is literally free due to generous Binance API limits.
+
+**Note** MarketAux API costs credits, to not exceed monthly budget we can call the API not often than 15 minutes.
 
 ## Pipeline Flows
 
-### `/api/read-news` (every 10 minutes)
+### `/api/read-news` (every 15 minutes)
 
 ```
 MarketAux API ──▶ Raw news articles (filtered by ticker)
@@ -129,7 +134,7 @@ Fetch Binance mark price (BTCUSDT perpetual) — only for kept news
 Batch upsert to Qdrant (vector + full metadata payload)
 ```
 
-### `/api/update-prices` (every 15 minutes)
+### `/api/update-prices` (every 10 minutes)
 
 ```
 Query Qdrant: news with null realized_price_delta fields
@@ -262,54 +267,8 @@ npm run dev
 npm run build
 ```
 
-## Frontend
 
-### Tech Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Framework | Next.js 16 (App Router, static export) |
-| Language | TypeScript |
-| Charts | TradingView Lightweight Charts v5 |
-| Styling | Tailwind CSS v4 |
-| Price Data | Binance USDⓈ-M Futures REST API (client-side) |
-| News Data | Backend FastAPI `/api/news` endpoint |
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Browser (SPA)                          │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Toolbar: [Ticker] [1h|4h|1d|1w|1M] [Impact ━━━━]  │  │
-│  ├────────────────────────────────────────────────────┤  │
-│  │                                                    │  │
-│  │         TradingView Lightweight Chart              │  │
-│  │         (candlestick + news markers)               │  │
-│  │                                                    │  │
-│  │              ● ●          ●    ●                   │  │
-│  │         ║║  ║║ ║║    ║║  ║║  ║║ ║║                 │  │
-│  │        ●║║  ║║ ║║   ●║║  ║║  ║║ ║║                 │  │
-│  │                                                    │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌──────────────────────┐                                │
-│  │ Popup (on click):    │                                │
-│  │ • 🟢 BTC surges...   │                                │
-│  │ • 🔴 SEC warns...    │                                │
-│  └──────────────────────┘                                │
-└──────────────────────────────────────────────────────────┘
-         │                         │
-         ▼                         ▼
-  ┌──────────────┐         ┌──────────────┐
-  │ Binance      │         │ FastAPI      │
-  │ fapi/v1/     │         │ /api/news    │
-  │ klines       │         │ (→ Qdrant)   │
-  └──────────────┘         └──────────────┘
-```
-
-### Data Flow
+### Frontend Data Flow
 
 1. User selects ticker (e.g., `BTCUSDT`) and timeframe (e.g., `1d`)
 2. Frontend fetches klines directly from Binance Futures public API
@@ -366,36 +325,15 @@ npm run build
 # Output: frontend/out/
 ```
 
-### Key Files
-
-```
-frontend/
-├── src/
-│   ├── app/
-│   │   ├── page.tsx          # Main page (ticker, timeframe, impact state)
-│   │   ├── layout.tsx        # Root layout (light theme, monospace font)
-│   │   └── globals.css       # Tailwind + CSS variables
-│   ├── components/
-│   │   ├── Chart.tsx         # TradingView chart + markers + range subscription
-│   │   ├── Toolbar.tsx       # Ticker input, timeframe buttons, impact slider
-│   │   └── NewsPopup.tsx     # Hover/click popup with news bullet list
-│   └── lib/
-│       ├── types.ts          # Shared TypeScript types
-│       ├── klines.ts         # Binance futures klines fetcher
-│       ├── news.ts           # Backend news API fetcher
-│       └── aggregate.ts      # News aggregation, sentiment colors, impact sizing
-├── next.config.ts            # Static export config
-├── .env.example              # NEXT_PUBLIC_API_URL template
-└── package.json
-```
 
 ## Deployment (Render)
+
 
 The `render.yaml` at the repo root defines:
 - **Web service**: FastAPI app serving pipeline + chart API endpoints
 - **Static site**: Next.js frontend (static export to `out/`)
 - **Cron job (15 min)**: hits `/api/read-news`
-- **Cron job (60 min)**: hits `/api/update-prices`
+- **Cron job (10 min)**: hits `/api/update-prices`
 
 Set all environment variables in the Render dashboard:
 - Backend: `MARKETAUX_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`
