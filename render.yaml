@@ -18,6 +18,14 @@ services:
         sync: false
       - key: AZURE_AI_API_KEY
         sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_BASE_URL
+        sync: false
+      - key: LANGFUSE_TRACING_ENVIRONMENT
+        value: production
 
   - type: web
     runtime: static
@@ -36,4 +44,3 @@ services:
           type: web
           name: news-chart-api
           envVarKey: RENDER_EXTERNAL_URL
-

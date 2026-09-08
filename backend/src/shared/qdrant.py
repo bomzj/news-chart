@@ -11,6 +11,7 @@ from qdrant_client.models import (
 )
 
 from src.config import app_config, secrets
+from src.shared.observability import langfuse_client
 
 
 def _build_range(params: dict) -> Range | DatetimeRange:
@@ -115,14 +116,35 @@ async def search_similar(
                 conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
         search_filter = Filter(must=conditions)
 
-    response = await qc.query_points(
-        collection_name=COLLECTION_NAME,
-        query=vector,
-        limit=limit,
-        score_threshold=score_threshold,
-        query_filter=search_filter,
-    )
-    return response.points
+    with langfuse_client().start_as_current_observation(
+        as_type="retriever",
+        name="search-similar-news",
+        input={
+            "collection": COLLECTION_NAME,
+            "limit": limit,
+            "score_threshold": score_threshold,
+            "filter_conditions": filter_conditions,
+        },
+    ) as observation:
+        response = await qc.query_points(
+            collection_name=COLLECTION_NAME,
+            query=vector,
+            limit=limit,
+            score_threshold=score_threshold,
+            query_filter=search_filter,
+        )
+        observation.update(
+            output=[
+                {
+                    "id": str(point.id),
+                    "score": point.score,
+                    "news_summary": (point.payload or {}).get("news_summary"),
+                    "published_at": (point.payload or {}).get("published_at"),
+                }
+                for point in response.points
+            ]
+        )
+        return response.points
 
 
 async def batch_update_payload(point_ids: list[str], payloads: list[dict]) -> None:

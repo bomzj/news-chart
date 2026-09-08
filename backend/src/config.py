@@ -26,7 +26,7 @@ class EmbeddingsConfig(BaseModel):
 
 
 class PipelineConfig(BaseModel):
-    fetch_news_interval_minutes: int = 10
+    fetch_news_interval_minutes: int = 15 # not used
     max_full_text_chars: int = 2000
 
 
@@ -52,6 +52,11 @@ class Secrets(BaseSettings):
     qdrant_api_key: str = ""
     azure_ai_endpoint: str = ""
     azure_ai_api_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+    langfuse_tracing_environment: str = "development"
+    langfuse_tracing_enabled: bool = True
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

@@ -1,8 +1,8 @@
 import asyncio
 import logging
 
-from src.config import app_config, secrets
-from src.shared.http import http_client
+from src.config import app_config
+from src.shared.azure_ai import azure_ai_client
 
 logger = logging.getLogger(__name__)
 
@@ -26,40 +26,27 @@ async def condense_texts(texts: list[str]) -> list[str]:
 
 async def _condense_single(text: str, limit: int) -> str:
     """Call nano LLM to summarize a single oversized article."""
-    sec = secrets()
     cfg = app_config().agents
-
-    url = f"{sec.azure_ai_endpoint}/openai/responses?api-version={cfg.api_version}"
 
     user_prompt = (
         f"Condense this article to under {limit} characters while keeping all important facts:\n\n{text}"
     )
 
     try:
-        client = await http_client()
-        response = await client.post(
-            url,
-            headers={"api-key": sec.azure_ai_api_key},
-            json={
-                "model": cfg.nano_deployment,
-                "input": [
-                    {"role": "system", "content": CONDENSE_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-            },
-            # Condensation is a simple task, 60s is generous
+        client = azure_ai_client(cfg.api_version)
+        response = await client.responses.create(
+            model=cfg.nano_deployment,
+            input=[
+                {"role": "system", "content": CONDENSE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            name="condense-article",
+            metadata={"max_output_chars": limit},
             timeout=60.0,
         )
-        response.raise_for_status()
-        output = response.json()["output"]
 
-        for item in output:
-            if item["type"] == "message":
-                for content in item["content"]:
-                    if content["type"] == "output_text":
-                        condensed = content["text"]
-                        # Hard cap as safety net
-                        return condensed[:limit]
+        if response.output_text:
+            return response.output_text[:limit]
 
         logger.warning("No text output from condense LLM, truncating instead")
         return text[:limit]

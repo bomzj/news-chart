@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.news_pipeline.router import router as news_router
 from src.price_updater.router import router as price_router
 from src.chart.router import router as chart_router
+from src.shared.azure_ai import close_azure_ai_clients
 from src.shared.http import close_http_client
+from src.shared.observability import langfuse_client, shutdown_langfuse
 from src.shared.qdrant import ensure_collection
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,7 @@ app.include_router(chart_router)
 
 @app.on_event("startup")
 async def startup():
+    langfuse_client()
     try:
         await ensure_collection()
     except Exception as exc:
@@ -39,7 +42,9 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    await close_azure_ai_clients()
     await close_http_client()
+    shutdown_langfuse()
 
 
 @app.get("/health")

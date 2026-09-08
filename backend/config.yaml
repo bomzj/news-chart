@@ -18,7 +18,7 @@ embeddings:
   api_version: "2023-05-15"
 
 pipeline:
-  fetch_news_interval_minutes: 10
+  fetch_news_interval_minutes: 10 # not used, since the pipeline is now triggered by a cron job
   max_full_text_chars: 2000
 
 price_updater:

@@ -22,6 +22,7 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 |-----------|-----------|
 | API Framework | FastAPI |
 | Agent Orchestration | LangGraph |
+| Observability | Langfuse |
 | Vector Database | Qdrant Cloud |
 | LLM Provider | Azure AI (GPT-5 Nano / Mini) |
 | Embeddings | Azure AI text-embedding-3-large (256 dims) |
@@ -223,7 +224,19 @@ QDRANT_URL=https://your-cluster.cloud.qdrant.io
 QDRANT_API_KEY=...
 AZURE_AI_ENDPOINT=https://your-resource.cognitiveservices.azure.com
 AZURE_AI_API_KEY=...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_TRACING_ENVIRONMENT=development
+LANGFUSE_TRACING_ENABLED=true
 ```
+
+Langfuse tracing is optional and disables itself when its API keys are not
+configured. Each `/api/read-news` execution creates one
+`process-news-pipeline` trace with nested ticker, retrieval, LangGraph analyst,
+generation, embedding, pricing, and storage observations. Azure AI calls use
+Langfuse's OpenAI wrapper to capture prompts, responses, latency, model names,
+token usage, and errors without recording API credentials.
 
 ## Local Development
 
