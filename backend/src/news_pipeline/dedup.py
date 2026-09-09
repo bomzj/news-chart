@@ -1,11 +1,19 @@
+import logging
 from datetime import datetime, timezone, timedelta
+from typing import Literal
 
 import numpy as np
 
 from src.config import app_config
 from src.shared.embeddings import embed_texts
-from src.shared.qdrant import search_similar
+from src.shared.observability import langfuse_client
+from src.shared.qdrant import search_similar, search_top1_batch
 from src.shared.types import RawNews
+
+logger = logging.getLogger(__name__)
+
+_EMBEDDING_INPUT_VERSION = "title_description_v1"
+SimilarityStage = Literal["qdrant", "intra_batch"]
 
 
 async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dict]]]:
@@ -24,6 +32,48 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
 
     texts = [f"{n.title} {n.description}" for n in news_items]
     embeddings = await embed_texts(texts)
+    if len(embeddings) != len(news_items):
+        raise ValueError("Embedding count does not match fetched news count")
+
+    embedding_cfg = app_config().embeddings
+
+    # Audit every fetched article independently of production dedup filters.
+    qdrant_matches = await search_top1_batch(embeddings)
+    for news, response in zip(news_items, qdrant_matches):
+        if not response.points:
+            continue
+
+        point = response.points[0]
+        pair_fields = _qdrant_pair_fields(point)
+        if pair_fields is None:
+            continue
+
+        right_published_at, right_description = pair_fields
+        _observe_similarity_pair(
+            left=news,
+            right_published_at=right_published_at,
+            right_description=right_description,
+            right_key=f"qdrant:{point.id}",
+            score=float(point.score),
+            threshold=threshold,
+            stage="qdrant",
+            embedding_model=embedding_cfg.deployment,
+            embedding_dimensions=embedding_cfg.dimensions,
+        )
+
+    # Capture the best intra-batch partner before the production survivor filter.
+    for left_index, right_index, score in _top1_intra_batch(embeddings):
+        _observe_similarity_pair(
+            left=news_items[left_index],
+            right_published_at=news_items[right_index].published_at.isoformat(),
+            right_description=news_items[right_index].description,
+            right_key=f"intra_batch:{_article_key(news_items[right_index])}",
+            score=score,
+            threshold=threshold,
+            stage="intra_batch",
+            embedding_model=embedding_cfg.deployment,
+            embedding_dimensions=embedding_cfg.dimensions,
+        )
 
     # Stage 1: intra-batch dedup
     survivors = _intra_batch_dedup(news_items, embeddings, threshold)
@@ -60,6 +110,24 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
     return results
 
 
+def _top1_intra_batch(
+    embeddings: list[list[float]],
+) -> list[tuple[int, int, float]]:
+    """Return each item's best non-self intra-batch match and its cosine score."""
+    if len(embeddings) <= 1:
+        return []
+
+    normalized = _normalize_embeddings(embeddings)
+    similarities = normalized @ normalized.T
+    np.fill_diagonal(similarities, -np.inf)
+
+    matches: list[tuple[int, int, float]] = []
+    for left_index, row in enumerate(similarities):
+        right_index = int(np.argmax(row))
+        matches.append((left_index, right_index, float(row[right_index])))
+    return matches
+
+
 def _intra_batch_dedup(
     news_items: list[RawNews],
     embeddings: list[list[float]],
@@ -69,10 +137,7 @@ def _intra_batch_dedup(
     if len(news_items) <= 1:
         return [(news_items[0], embeddings[0])] if news_items else []
 
-    vectors = np.array(embeddings)
-    # Normalize for cosine similarity via dot product
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    normalized = vectors / norms
+    normalized = _normalize_embeddings(embeddings)
 
     keep = set(range(len(news_items)))
 
@@ -87,3 +152,77 @@ def _intra_batch_dedup(
                 keep.discard(j)
 
     return [(news_items[i], embeddings[i]) for i in sorted(keep)]
+
+
+def _normalize_embeddings(embeddings: list[list[float]]) -> np.ndarray:
+    vectors = np.asarray(embeddings, dtype=float)
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    if np.any(norms == 0):
+        raise ValueError("Cannot calculate cosine similarity for a zero vector")
+    return vectors / norms
+
+
+def _observe_similarity_pair(
+    *,
+    left: RawNews,
+    right_published_at: str,
+    right_description: str,
+    right_key: str,
+    score: float,
+    threshold: float,
+    stage: SimilarityStage,
+    embedding_model: str,
+    embedding_dimensions: int,
+) -> None:
+    left_key = _article_key(left)
+    metadata = {
+        "source": "production",
+        "comparison_stage": stage,
+        "similarity_score": score,
+        "embedding_model": embedding_model,
+        "embedding_dimensions": embedding_dimensions,
+        "similarity_threshold": threshold,
+        "embedding_input_version": _EMBEDDING_INPUT_VERSION,
+        "left_article_key": left_key,
+        "right_article_key": right_key,
+        "pair_key": _pair_key(left_key, right_key),
+    }
+
+    with langfuse_client().start_as_current_observation(
+        as_type="span",
+        name="news-similarity-pair",
+        input={
+            "left": {
+                "published_at": left.published_at.isoformat(),
+                "description": left.description,
+            },
+            "right": {
+                "published_at": right_published_at,
+                "description": right_description,
+            },
+        },
+        metadata=metadata,
+    ) as observation:
+        observation.update(output={"similar": score >= threshold})
+
+
+def _qdrant_pair_fields(point) -> tuple[str, str] | None:
+    payload = point.payload or {}
+    published_at = payload.get("published_at")
+    description = payload.get("news_full_text")
+    if isinstance(published_at, str) and isinstance(description, str):
+        return published_at, description
+
+    logger.warning(
+        "Skipping similarity audit for Qdrant point %s: missing published_at or news_full_text",
+        point.id,
+    )
+    return None
+
+
+def _article_key(news: RawNews) -> str:
+    return news.url or f"{news.source}|{news.published_at.isoformat()}|{news.title}"
+
+
+def _pair_key(left_key: str, right_key: str) -> str:
+    return "::".join(sorted((left_key, right_key)))

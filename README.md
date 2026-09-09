@@ -108,6 +108,11 @@ Condense oversized articles (>2000 chars) via GPT-5 Nano summarization
 Embed all articles (Azure AI batch) ──▶ 256-dim vectors
        │
        ▼
+Langfuse similarity audit (observability only):
+  ├── unfiltered Qdrant top-1 match for every fetched article
+  └── best non-self intra-batch match for every article
+       │
+       ▼
 Intra-batch dedup (pairwise cosine ≥ 0.90 → keep first)
        │
        ▼
@@ -134,6 +139,39 @@ Fetch Binance mark price (BTCUSDT perpetual) — only for kept news
        ▼
 Batch upsert to Qdrant (vector + full metadata payload)
 ```
+
+### Langfuse Similarity Audit
+
+The pipeline records similarity pairs for later threshold and embedding evaluation without changing the production deduplication decision. Qdrant audit queries use the top-1 result with no payload filter and no score threshold; the existing 24-hour filtered query remains responsible for deduplication and context retrieval.
+
+Each pair observation contains:
+
+```json
+{
+  "input": {
+    "left": {
+       "published_at": "...",
+       "description": "..."
+    },
+    "right": {
+       "published_at": "...",
+       "description": "..."
+    }
+  },
+  "output": {
+    "similar": false
+  },
+  "metadata": {
+    "comparison_stage": "qdrant",
+    "similarity_score": 0.85,
+    "embedding_model": "text-embedding-3-large",
+    "embedding_dimensions": 256,
+    "similarity_threshold": 0.9
+  }
+}
+```
+
+`output.similar` is the current system classification (`score >= threshold`), not verified ground truth. Human labels should be added later as Langfuse scores or dataset expected outputs. For historical Qdrant matches, the logged `right.description` is populated from the existing `news_full_text` payload.
 
 ### `/api/update-prices` (every 10 minutes)
 

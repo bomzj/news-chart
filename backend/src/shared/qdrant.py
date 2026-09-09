@@ -8,6 +8,8 @@ from qdrant_client.models import (
     Range,
     DatetimeRange,
     PayloadSchemaType,
+    QueryRequest,
+    QueryResponse,
 )
 
 from src.config import app_config, secrets
@@ -145,6 +147,57 @@ async def search_similar(
             ]
         )
         return response.points
+
+
+async def search_top1_batch(vectors: list[list[float]]) -> list[QueryResponse]:
+    """Return the unfiltered top match for each query vector in input order."""
+    if not vectors:
+        return []
+
+    qc = await client()
+    requests = [
+        QueryRequest(
+            query=vector,
+            limit=1,
+            with_payload=True,
+        )
+        for vector in vectors
+    ]
+
+    with langfuse_client().start_as_current_observation(
+        as_type="retriever",
+        name="audit-top1-similar-news",
+        input={
+            "collection": COLLECTION_NAME,
+            "query_count": len(requests),
+            "limit": 1,
+            "score_threshold": None,
+            "filter_conditions": None,
+        },
+    ) as observation:
+        responses = await qc.query_batch_points(
+            collection_name=COLLECTION_NAME,
+            requests=requests,
+        )
+        if len(responses) != len(vectors):
+            raise RuntimeError(
+                "Qdrant returned a different number of batch responses than query vectors"
+            )
+
+        observation.update(
+            output=[
+                [
+                    {
+                        "id": str(point.id),
+                        "score": point.score,
+                        "published_at": (point.payload or {}).get("published_at"),
+                    }
+                    for point in response.points
+                ]
+                for response in responses
+            ]
+        )
+        return responses
 
 
 async def batch_update_payload(point_ids: list[str], payloads: list[dict]) -> None:
