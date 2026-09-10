@@ -159,19 +159,19 @@ Each pair observation contains:
     }
   },
   "output": {
-    "similar": false
+    "similar": false,
+    "cosine_similarity": 0.85,
+    "threshold_used": 0.9
   },
   "metadata": {
     "comparison_stage": "qdrant",
-    "similarity_score": 0.85,
     "embedding_model": "text-embedding-3-large",
-    "embedding_dimensions": 256,
-    "similarity_threshold": 0.9
+    "embedding_dimensions": 256
   }
 }
 ```
 
-`output.similar` is the current system classification (`score >= threshold`), not verified ground truth. Human labels should be added later as Langfuse scores or dataset expected outputs. For historical Qdrant matches, the logged `right.description` is populated from the existing `news_full_text` payload.
+`output.similar` is the current system classification (`cosine_similarity >= threshold_used`), not verified ground truth. Human labels should be added later as Langfuse scores or dataset expected outputs. For historical Qdrant matches, the logged `right.description` is populated from the existing `news_full_text` payload.
 
 ### `/api/update-prices` (every 10 minutes)
 

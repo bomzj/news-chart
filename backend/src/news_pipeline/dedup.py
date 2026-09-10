@@ -178,10 +178,8 @@ def _observe_similarity_pair(
     metadata = {
         "source": "production",
         "comparison_stage": stage,
-        "similarity_score": score,
         "embedding_model": embedding_model,
         "embedding_dimensions": embedding_dimensions,
-        "similarity_threshold": threshold,
         "embedding_input_version": _EMBEDDING_INPUT_VERSION,
         "left_article_key": left_key,
         "right_article_key": right_key,
@@ -203,7 +201,13 @@ def _observe_similarity_pair(
         },
         metadata=metadata,
     ) as observation:
-        observation.update(output={"similar": score >= threshold})
+        observation.update(
+            output={
+                "similar": score >= threshold,
+                "cosine_similarity": score,
+                "threshold_used": threshold,
+            }
+        )
 
 
 def _qdrant_pair_fields(point) -> tuple[str, str] | None:
