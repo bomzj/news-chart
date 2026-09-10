@@ -2,10 +2,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Literal
 
-import numpy as np
-
 from src.config import app_config
-from src.shared.embeddings import embed_texts
+from src.shared.embeddings import cosine_similarity, embed_texts
 from src.shared.observability import langfuse_client
 from src.shared.qdrant import search_similar, search_top1_batch
 from src.shared.types import RawNews
@@ -117,14 +115,17 @@ def _top1_intra_batch(
     if len(embeddings) <= 1:
         return []
 
-    normalized = _normalize_embeddings(embeddings)
-    similarities = normalized @ normalized.T
-    np.fill_diagonal(similarities, -np.inf)
-
     matches: list[tuple[int, int, float]] = []
-    for left_index, row in enumerate(similarities):
-        right_index = int(np.argmax(row))
-        matches.append((left_index, right_index, float(row[right_index])))
+    for left_index, left_embedding in enumerate(embeddings):
+        best_match = max(
+            (
+                (right_index, cosine_similarity(left_embedding, right_embedding))
+                for right_index, right_embedding in enumerate(embeddings)
+                if right_index != left_index
+            ),
+            key=lambda match: match[1],
+        )
+        matches.append((left_index, best_match[0], best_match[1]))
     return matches
 
 
@@ -137,8 +138,6 @@ def _intra_batch_dedup(
     if len(news_items) <= 1:
         return [(news_items[0], embeddings[0])] if news_items else []
 
-    normalized = _normalize_embeddings(embeddings)
-
     keep = set(range(len(news_items)))
 
     for i in range(len(news_items)):
@@ -147,19 +146,11 @@ def _intra_batch_dedup(
         for j in range(i + 1, len(news_items)):
             if j not in keep:
                 continue
-            similarity = float(np.dot(normalized[i], normalized[j]))
+            similarity = cosine_similarity(embeddings[i], embeddings[j])
             if similarity >= threshold:
                 keep.discard(j)
 
     return [(news_items[i], embeddings[i]) for i in sorted(keep)]
-
-
-def _normalize_embeddings(embeddings: list[list[float]]) -> np.ndarray:
-    vectors = np.asarray(embeddings, dtype=float)
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    if np.any(norms == 0):
-        raise ValueError("Cannot calculate cosine similarity for a zero vector")
-    return vectors / norms
 
 
 def _observe_similarity_pair(

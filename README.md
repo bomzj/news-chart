@@ -298,7 +298,18 @@ curl -X POST http://localhost:8000/api/update-prices
 
 # Run tests
 uv run pytest
+
+# Run the Langfuse news similarity evaluation
+uv run python -m eval.run_similarity_evals --threshold 0.90
+# Override the dataset when evaluating another labeled pair set
+uv run python -m eval.run_similarity_evals --dataset similar-news --threshold 0.95
 ```
+
+The similarity dataset expects each item to contain `input.news_1` and
+`input.news_2`, plus an `expected_output` boolean (or
+`{"similar": true|false}`) for the human duplicate label. Run the evaluator
+repeatedly with different thresholds to compare the `similarity_accuracy` score
+in Langfuse.
 
 ### Frontend
 
