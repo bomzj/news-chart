@@ -276,6 +276,66 @@ generation, embedding, pricing, and storage observations. Azure AI calls use
 Langfuse's OpenAI wrapper to capture prompts, responses, latency, model names,
 token usage, and errors without recording API credentials.
 
+## Evals
+
+### News similarity evaluation
+
+The first evaluation measures whether the embedding model and cosine-similarity
+threshold correctly classify pairs of news articles as duplicates or distinct
+articles. It runs as a Langfuse experiment and does not change the production
+deduplication workflow or write anything to Qdrant.
+
+Each experiment item in the `similar-news` dataset must contain two article
+texts and a human-verified label:
+
+```json
+{
+  "input": {
+    "news_1": "First article text",
+    "news_2": "Second article text"
+  },
+  "expected_output": {
+    "similar": true
+  }
+}
+```
+
+`expected_output` may also be the boolean `true` or `false`. The evaluation
+embeds both texts with the configured Azure embedding deployment, calculates
+their cosine similarity, and predicts `similar=true` when the score is at least
+the selected threshold. The evaluator returns a `similar` score of `1` for a
+correct classification and `0` for an incorrect one. Use manually verified
+labels for `expected_output`; the similarity values recorded by the production
+audit are system predictions, not ground truth.
+
+#### Running the evaluation
+
+Run the commands from `backend/` so the evaluator can load `.env` and
+`config.yaml`:
+
+```bash
+cd backend
+uv sync
+
+# Uses the similar-news dataset and dedup.cosine_threshold from config.yaml
+uv run news-similarity-evals
+
+# Evaluate a specific threshold
+uv run news-similarity-evals --threshold 0.90
+
+# Evaluate another labeled dataset
+uv run news-similarity-evals \
+  --dataset another-news-dataset \
+  --threshold 0.95
+```
+
+Before running, configure the Azure AI and Langfuse variables in
+`backend/.env`, including `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`,
+`LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY`. The command prints the
+experiment result and records it in Langfuse. Run it with several thresholds
+and compare the `similar` scores in Langfuse to choose a threshold that fits
+the labeled news pairs.
+
 ## Local Development
 
 ### Backend
@@ -298,18 +358,7 @@ curl -X POST http://localhost:8000/api/update-prices
 
 # Run tests
 uv run pytest
-
-# Run the Langfuse news similarity evaluation
-uv run python -m eval.run_similarity_evals --threshold 0.90
-# Override the dataset when evaluating another labeled pair set
-uv run python -m eval.run_similarity_evals --dataset similar-news --threshold 0.95
 ```
-
-The similarity dataset expects each item to contain `input.news_1` and
-`input.news_2`, plus an `expected_output` boolean (or
-`{"similar": true|false}`) for the human duplicate label. Run the evaluator
-repeatedly with different thresholds to compare the `similarity_accuracy` score
-in Langfuse.
 
 ### Frontend
 
