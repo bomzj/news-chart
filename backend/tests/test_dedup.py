@@ -146,13 +146,13 @@ async def test_deduplicate_audits_all_items_and_preserves_filtered_path(monkeypa
     ]
     assert all(call.kwargs["filter_conditions"]["published_at"]["range"]["gte"] for call in search_similar.await_args_list)
     assert len(langfuse.observations) == 3
-    assert all(observation["name"] == "news-similarity-pair" for observation in langfuse.observations)
+    assert all(observation["name"] == "duplicate-check" for observation in langfuse.observations)
     assert all(set(observation["input"]) == {"left", "right"} for observation in langfuse.observations)
     assert all(
-        set(kwargs["output"]) == {"similar", "cosine_similarity", "threshold_used"}
+        set(kwargs["output"]) == {"duplicate", "cosine_similarity", "threshold"}
         for _, kwargs in langfuse.updates
     )
-    assert all(kwargs["output"]["threshold_used"] == 0.9 for _, kwargs in langfuse.updates)
+    assert all(kwargs["output"]["threshold"] == 0.9 for _, kwargs in langfuse.updates)
     assert all(
         "similarity_score" not in observation["metadata"]
         and "similarity_threshold" not in observation["metadata"]

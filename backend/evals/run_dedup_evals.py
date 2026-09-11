@@ -12,16 +12,16 @@ from src.config import app_config
 from src.shared.embeddings import cosine_similarity, embed_texts
 from src.shared.observability import langfuse_client, shutdown_langfuse
 
-DEFAULT_DATASET = "similar-news"
+DEFAULT_DATASET = "news-duplicate-pairs"
 
 
-async def news_similarity_task(
+async def detect_duplicate(
     *,
     item: Any,
     threshold: float | None = None,
     **kwargs: Any,
 ) -> dict[str, bool | float]:
-    """Embed one dataset pair and classify it using the requested threshold."""
+    """Embed one dataset pair and classify it as duplicate using the given threshold."""
     del kwargs
     threshold_used = (
         app_config().dedup.cosine_threshold if threshold is None else threshold
@@ -36,62 +36,64 @@ async def news_similarity_task(
 
     cos_sim = cosine_similarity(embeddings[0], embeddings[1])
     return {
-        "similar": cos_sim >= threshold_used,
+        "duplicate": cos_sim >= threshold_used,
         "cosine_similarity": cos_sim,
-        "threshold_used": threshold_used,
+        "threshold": threshold_used,
     }
 
 
-def _expected_similarity(expected_output: Any) -> bool:
+def _expected_duplicate(expected_output: Any) -> bool:
     if isinstance(expected_output, bool):
         return expected_output
     if isinstance(expected_output, Mapping) and isinstance(
-        expected_output.get("similar"), bool
+        expected_output.get("duplicate"), bool
     ):
-        return expected_output["similar"]
+        return expected_output["duplicate"]
     raise TypeError(
         "Dataset expected_output must be a boolean or a mapping with a boolean "
-        "'similar' field"
+        "'duplicate' field"
     )
 
 
-def eval_semantic_similarity(
+def _predicted_duplicate(output: Any) -> bool:
+    if not isinstance(output, Mapping) or not isinstance(output.get("duplicate"), bool):
+        raise TypeError("Task output must be a mapping with a boolean 'duplicate' field")
+    return output["duplicate"]
+
+
+def eval_duplicate_match(
     *,
     input: Any,
     output: Any,
     expected_output: Any = None,
     **kwargs: Any,
 ) -> Evaluation:
-    """Score whether the threshold-based classification matches the human label."""
+    """Score whether the threshold-based duplicate call matches the human label."""
     del input, kwargs
-    if not isinstance(output, Mapping) or not isinstance(output.get("similar"), bool):
-        raise TypeError("Task output must be a mapping with a boolean 'similar' field")
-
-    expected = _expected_similarity(expected_output)
-    predicted = output["similar"]
+    expected = _expected_duplicate(expected_output)
+    predicted = _predicted_duplicate(output)
     correct = predicted == expected
 
     return Evaluation(
-        name="similar",
+        name="duplicate-correct",
         value=1.0 if correct else 0.0,
-        comment=(
-            f"Predicted similar={predicted}; expected similar={expected}"
-        ),
+        data_type="BOOLEAN",
+        comment=f"Predicted duplicate={predicted}; expected duplicate={expected}",
         metadata={
-            "expected_similar": expected,
-            "predicted_similar": predicted,
+            "expected_duplicate": expected,
+            "predicted_duplicate": predicted,
             "cosine_similarity": output.get("cosine_similarity"),
-            "threshold_used": output.get("threshold_used"),
+            "threshold": output.get("threshold"),
         },
     )
 
 
-def run_similarity_evals(
+def run_dedup_evals(
     *,
     dataset: str = DEFAULT_DATASET,
     threshold: float | None = None,
 ) -> ExperimentResult:
-    """Run the semantic similarity experiment against a Langfuse dataset."""
+    """Run the duplicate-detection experiment against a Langfuse dataset."""
     if not dataset.strip():
         raise ValueError("Dataset name must not be empty")
 
@@ -106,16 +108,16 @@ def run_similarity_evals(
             "before running the experiment"
         )
 
-    task = partial(news_similarity_task, threshold=threshold_used)
+    task = partial(detect_duplicate, threshold=threshold_used)
     embedding_config = app_config().embeddings
     return langfuse_dataset.run_experiment(
-        name=f"News similarity threshold={threshold_used:.2f}",
+        name=f"dedup-threshold-{threshold_used:.2f}",
         description=(
             "Evaluate embedding cosine similarity against human-labeled news "
             "duplicate pairs"
         ),
         task=task,
-        evaluators=[eval_semantic_similarity],
+        evaluators=[eval_duplicate_match],
         metadata={
             "dataset": dataset,
             "threshold": threshold_used,
@@ -127,7 +129,7 @@ def run_similarity_evals(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the Langfuse news similarity threshold evaluation."
+        description="Run the Langfuse news duplicate-detection threshold evaluation."
     )
     parser.add_argument(
         "--dataset",
@@ -146,7 +148,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        result = run_similarity_evals(
+        result = run_dedup_evals(
             dataset=args.dataset,
             threshold=args.threshold,
         )

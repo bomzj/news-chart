@@ -37,7 +37,7 @@ testpaths = ["tests"]
 
 [project.scripts]
 start = "src.cli:main"
-news-similarity-evals = "evals.run_similarity_evals:main"
+news-dedup-evals = "evals.run_dedup_evals:main"
 
 [build-system]
 requires = ["hatchling"]

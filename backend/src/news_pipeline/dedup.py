@@ -11,7 +11,7 @@ from src.shared.types import RawNews
 logger = logging.getLogger(__name__)
 
 _EMBEDDING_INPUT_VERSION = "title_description_v1"
-SimilarityStage = Literal["qdrant", "intra_batch"]
+DedupStage = Literal["qdrant", "intra_batch"]
 
 
 async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dict]]]:
@@ -47,7 +47,7 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
             continue
 
         right_published_at, right_description = pair_fields
-        _observe_similarity_pair(
+        _observe_duplicate_check(
             left=news,
             right_published_at=right_published_at,
             right_description=right_description,
@@ -61,7 +61,7 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
 
     # Capture the best intra-batch partner before the production survivor filter.
     for left_index, right_index, score in _top1_intra_batch(embeddings):
-        _observe_similarity_pair(
+        _observe_duplicate_check(
             left=news_items[left_index],
             right_published_at=news_items[right_index].published_at.isoformat(),
             right_description=news_items[right_index].description,
@@ -153,7 +153,7 @@ def _intra_batch_dedup(
     return [(news_items[i], embeddings[i]) for i in sorted(keep)]
 
 
-def _observe_similarity_pair(
+def _observe_duplicate_check(
     *,
     left: RawNews,
     right_published_at: str,
@@ -161,14 +161,14 @@ def _observe_similarity_pair(
     right_key: str,
     score: float,
     threshold: float,
-    stage: SimilarityStage,
+    stage: DedupStage,
     embedding_model: str,
     embedding_dimensions: int,
 ) -> None:
     left_key = _article_key(left)
     metadata = {
         "source": "production",
-        "comparison_stage": stage,
+        "stage": stage,
         "embedding_model": embedding_model,
         "embedding_dimensions": embedding_dimensions,
         "embedding_input_version": _EMBEDDING_INPUT_VERSION,
@@ -179,7 +179,7 @@ def _observe_similarity_pair(
 
     with langfuse_client().start_as_current_observation(
         as_type="span",
-        name="news-similarity-pair",
+        name="duplicate-check",
         input={
             "left": {
                 "published_at": left.published_at.isoformat(),
@@ -194,9 +194,9 @@ def _observe_similarity_pair(
     ) as observation:
         observation.update(
             output={
-                "similar": score >= threshold,
+                "duplicate": score >= threshold,
                 "cosine_similarity": score,
-                "threshold_used": threshold,
+                "threshold": threshold,
             }
         )
 
