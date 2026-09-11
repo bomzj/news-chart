@@ -21,6 +21,7 @@
     - *Bad:* `get_sentiment()`, `is_duplicate()`, `calculate_price_delta()`
     - *Good:* `sentiment()`, `duplicated()`, `price_delta()`
 - **Actionable Context:** Use `verb_noun` only when representing a side effect or distinct pipeline action (e.g., `fetch_news()`, `update_prices()`).
+- **No underscore prefix for function and variables names:** Avoid leading underscores for functions/variables even if they are intended to be private within a module.
 
 ## 4. Optimization & Performance
 - **Batching is Mandatory:** Always optimize for batched database I/O. Use Qdrant's batch operations for point insertions, semantic vector searches, and crucially, **batch payload/metadata updates** when querying via filters (e.g., matching `published_at` to backfill realized price deltas).
