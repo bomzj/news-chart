@@ -20,7 +20,7 @@ async def detect_duplicate(
     item: Any,
     threshold: float | None = None,
     **kwargs: Any,
-) -> dict[str, bool | float]:
+) -> dict[str, bool]:
     """Embed one dataset pair and classify it as duplicate using the given threshold."""
     del kwargs
     threshold_used = (
@@ -35,11 +35,7 @@ async def detect_duplicate(
         )
 
     cos_sim = cosine_similarity(embeddings[0], embeddings[1])
-    return {
-        "duplicate": cos_sim >= threshold_used,
-        "cosine_similarity": cos_sim,
-        "threshold": threshold_used,
-    }
+    return {"duplicate": cos_sim >= threshold_used}
 
 
 def _expected_duplicate(expected_output: Any) -> bool:
@@ -82,8 +78,6 @@ def eval_duplicate_match(
         metadata={
             "expected_duplicate": expected,
             "predicted_duplicate": predicted,
-            "cosine_similarity": output.get("cosine_similarity"),
-            "threshold": output.get("threshold"),
         },
     )
 

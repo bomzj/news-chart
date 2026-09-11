@@ -169,6 +169,8 @@ def _observe_duplicate_check(
     metadata = {
         "source": "production",
         "stage": stage,
+        "cosine_similarity": score,
+        "threshold": threshold,
         "embedding_model": embedding_model,
         "embedding_dimensions": embedding_dimensions,
         "embedding_input_version": _EMBEDDING_INPUT_VERSION,
@@ -192,13 +194,7 @@ def _observe_duplicate_check(
         },
         metadata=metadata,
     ) as observation:
-        observation.update(
-            output={
-                "duplicate": score >= threshold,
-                "cosine_similarity": score,
-                "threshold": threshold,
-            }
-        )
+        observation.update(output={"duplicate": score >= threshold})
 
 
 def _qdrant_pair_fields(point) -> tuple[str, str] | None:

@@ -149,12 +149,11 @@ async def test_deduplicate_audits_all_items_and_preserves_filtered_path(monkeypa
     assert all(observation["name"] == "duplicate-check" for observation in langfuse.observations)
     assert all(set(observation["input"]) == {"left", "right"} for observation in langfuse.observations)
     assert all(
-        set(kwargs["output"]) == {"duplicate", "cosine_similarity", "threshold"}
+        set(kwargs["output"]) == {"duplicate"}
         for _, kwargs in langfuse.updates
     )
-    assert all(kwargs["output"]["threshold"] == 0.9 for _, kwargs in langfuse.updates)
     assert all(
-        "similarity_score" not in observation["metadata"]
-        and "similarity_threshold" not in observation["metadata"]
+        isinstance(observation["metadata"]["cosine_similarity"], float)
+        and observation["metadata"]["threshold"] == 0.9
         for observation in langfuse.observations
     )
