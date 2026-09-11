@@ -108,7 +108,7 @@ Condense oversized articles (>2000 chars) via GPT-5 Nano summarization
 Embed all articles (Azure AI batch) ──▶ 256-dim vectors
        │
        ▼
-Langfuse similarity audit (observability only):
+Langfuse duplicate-check audit (observability only):
   ├── unfiltered Qdrant top-1 match for every fetched article
   └── best non-self intra-batch match for every article
        │
@@ -140,11 +140,11 @@ Fetch Binance mark price (BTCUSDT perpetual) — only for kept news
 Batch upsert to Qdrant (vector + full metadata payload)
 ```
 
-### Langfuse Similarity Audit
+### Langfuse Duplicate-Check Audit
 
-The pipeline records similarity pairs for later threshold and embedding evaluation without changing the production deduplication decision. Qdrant audit queries use the top-1 result with no payload filter and no score threshold; the existing 24-hour filtered query remains responsible for deduplication and context retrieval.
+The pipeline records duplicate checks for later threshold and embedding evaluation without changing the production deduplication decision. Qdrant audit queries use the top-1 result with no payload filter and no score threshold; the existing 24-hour filtered query remains responsible for deduplication and context retrieval.
 
-Each pair observation contains:
+Each `duplicate-check` observation contains:
 
 ```json
 {
@@ -159,19 +159,19 @@ Each pair observation contains:
     }
   },
   "output": {
-    "similar": false,
+    "duplicate": false,
     "cosine_similarity": 0.85,
-    "threshold_used": 0.9
+    "threshold": 0.9
   },
   "metadata": {
-    "comparison_stage": "qdrant",
+    "stage": "qdrant",
     "embedding_model": "text-embedding-3-large",
     "embedding_dimensions": 256
   }
 }
 ```
 
-`output.similar` is the current system classification (`cosine_similarity >= threshold_used`), not verified ground truth. Human labels should be added later as Langfuse scores or dataset expected outputs. For historical Qdrant matches, the logged `right.description` is populated from the existing `news_full_text` payload.
+`output.duplicate` is the current system classification (`cosine_similarity >= threshold`), not verified ground truth. Human labels should be added later as Langfuse scores or dataset expected outputs. For historical Qdrant matches, the logged `right.description` is populated from the existing `news_full_text` payload.
 
 ### `/api/update-prices` (every 10 minutes)
 
@@ -278,15 +278,15 @@ token usage, and errors without recording API credentials.
 
 ## Evals
 
-### News similarity evaluation
+### News duplicate-detection evaluation
 
 The first evaluation measures whether the embedding model and cosine-similarity
 threshold correctly classify pairs of news articles as duplicates or distinct
 articles. It runs as a Langfuse experiment and does not change the production
 deduplication workflow or write anything to Qdrant.
 
-Each experiment item in the `similar-news` dataset must contain two article
-texts and a human-verified label:
+Each experiment item in the `news-duplicate-pairs` dataset must contain two
+article texts and a human-verified label:
 
 ```json
 {
@@ -295,18 +295,20 @@ texts and a human-verified label:
     "news_2": "Second article text"
   },
   "expected_output": {
-    "similar": true
+    "duplicate": true
   }
 }
 ```
 
 `expected_output` may also be the boolean `true` or `false`. The evaluation
 embeds both texts with the configured Azure embedding deployment, calculates
-their cosine similarity, and predicts `similar=true` when the score is at least
-the selected threshold. The evaluator returns a `similar` score of `1` for a
-correct classification and `0` for an incorrect one. Use manually verified
+their cosine similarity, and predicts `duplicate=true` when the score is at
+least the selected threshold. It emits one score per item: `duplicate-correct`
+(`BOOLEAN`, `1` when the prediction matches the label). Use manually verified
 labels for `expected_output`; the similarity values recorded by the production
 audit are system predictions, not ground truth.
+
+Naming follows one rule: the decision is a **duplicate**.
 
 #### Running the evaluation
 
@@ -317,14 +319,14 @@ Run the commands from `backend/` so the evaluator can load `.env` and
 cd backend
 uv sync
 
-# Uses the similar-news dataset and dedup.cosine_threshold from config.yaml
-uv run news-similarity-evals
+# Uses the news-duplicate-pairs dataset and dedup.cosine_threshold from config.yaml
+uv run news-dedup-evals
 
 # Evaluate a specific threshold
-uv run news-similarity-evals --threshold 0.90
+uv run news-dedup-evals --threshold 0.90
 
 # Evaluate another labeled dataset
-uv run news-similarity-evals \
+uv run news-dedup-evals \
   --dataset another-news-dataset \
   --threshold 0.95
 ```
@@ -332,9 +334,10 @@ uv run news-similarity-evals \
 Before running, configure the Azure AI and Langfuse variables in
 `backend/.env`, including `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`,
 `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY`. The command prints the
-experiment result and records it in Langfuse. Run it with several thresholds
-and compare the `similar` scores in Langfuse to choose a threshold that fits
-the labeled news pairs.
+experiment result and records it in Langfuse. Each run is named
+`dedup-threshold-<value>`; run it with several thresholds and compare the
+`duplicate-correct` scores in Langfuse to choose a threshold that fits the
+labeled news pairs.
 
 ## Local Development
 
