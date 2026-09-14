@@ -10,7 +10,6 @@ from src.shared.types import RawNews
 
 logger = logging.getLogger(__name__)
 
-_EMBEDDING_INPUT_VERSION = "title_description_v1"
 DedupStage = Literal["qdrant", "intra_batch"]
 
 
@@ -51,7 +50,6 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
             left=news,
             right_published_at=right_published_at,
             right_description=right_description,
-            right_key=f"qdrant:{point.id}",
             score=float(point.score),
             threshold=threshold,
             stage="qdrant",
@@ -65,7 +63,6 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
             left=news_items[left_index],
             right_published_at=news_items[right_index].published_at.isoformat(),
             right_description=news_items[right_index].description,
-            right_key=f"intra_batch:{_article_key(news_items[right_index])}",
             score=score,
             threshold=threshold,
             stage="intra_batch",
@@ -158,14 +155,12 @@ def _observe_duplicate_check(
     left: RawNews,
     right_published_at: str,
     right_description: str,
-    right_key: str,
     score: float,
     threshold: float,
     stage: DedupStage,
     embedding_model: str,
     embedding_dimensions: int,
 ) -> None:
-    left_key = _article_key(left)
     metadata = {
         "source": "production",
         "stage": stage,
@@ -173,10 +168,6 @@ def _observe_duplicate_check(
         "threshold": threshold,
         "embedding_model": embedding_model,
         "embedding_dimensions": embedding_dimensions,
-        "embedding_input_version": _EMBEDDING_INPUT_VERSION,
-        "left_article_key": left_key,
-        "right_article_key": right_key,
-        "pair_key": _pair_key(left_key, right_key),
     }
 
     with langfuse_client().start_as_current_observation(
@@ -209,11 +200,3 @@ def _qdrant_pair_fields(point) -> tuple[str, str] | None:
         point.id,
     )
     return None
-
-
-def _article_key(news: RawNews) -> str:
-    return news.url or f"{news.source}|{news.published_at.isoformat()}|{news.title}"
-
-
-def _pair_key(left_key: str, right_key: str) -> str:
-    return "::".join(sorted((left_key, right_key)))
