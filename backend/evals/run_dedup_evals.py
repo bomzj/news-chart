@@ -27,7 +27,7 @@ async def detect_duplicate(
         app_config().dedup.cosine_threshold if threshold is None else threshold
     )
     news_1, news_2 = item.input["news_1"], item.input["news_2"]
-    embeddings = await embed_texts([news_1, news_2])
+    embeddings = await embed_texts([news_1, news_2], observe=True)
 
     if len(embeddings) != 2:
         raise ValueError(

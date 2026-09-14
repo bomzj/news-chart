@@ -128,7 +128,8 @@ async def test_deduplicate_audits_all_items_and_uses_context_threshold(monkeypat
     search_similar = AsyncMock(return_value=[])
     langfuse = _LangfuseStub()
 
-    monkeypatch.setattr("src.news_pipeline.dedup.embed_texts", AsyncMock(return_value=embeddings))
+    embed_texts = AsyncMock(return_value=embeddings)
+    monkeypatch.setattr("src.news_pipeline.dedup.embed_texts", embed_texts)
     monkeypatch.setattr("src.news_pipeline.dedup.search_top1_batch", search_top1)
     monkeypatch.setattr("src.news_pipeline.dedup.search_similar", search_similar)
     monkeypatch.setattr("src.news_pipeline.dedup.langfuse_client", lambda: langfuse)
@@ -136,6 +137,10 @@ async def test_deduplicate_audits_all_items_and_uses_context_threshold(monkeypat
     result = await deduplicate(news)
 
     assert [item[0].title for item in result] == ["A", "C"]
+    embed_texts.assert_awaited_once_with(
+        ["A Description", "B Description", "C Description"],
+        observe=True,
+    )
     search_top1.assert_awaited_once_with(embeddings)
     assert search_similar.await_count == 4
     assert [call.kwargs["score_threshold"] for call in search_similar.await_args_list] == [

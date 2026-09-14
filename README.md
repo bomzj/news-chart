@@ -108,7 +108,9 @@ Condense oversized articles (>2000 chars) via GPT-5 Nano summarization
 Embed all articles (Azure AI batch) ──▶ 256-dim vectors
        │
        ▼
-Langfuse duplicate-check audit (observability only):
+Langfuse deduplication observability:
+  ├── deduplicate-news parent observation
+  ├── dedup embedding generation
   ├── unfiltered Qdrant top-1 match for every fetched article
   └── best non-self intra-batch match for every article
        │
@@ -140,9 +142,19 @@ Fetch Binance mark price (BTCUSDT perpetual) — only for kept news
 Batch upsert to Qdrant (vector + full metadata payload)
 ```
 
-### Langfuse Duplicate-Check Audit
+### Langfuse Deduplication Observability
 
-The pipeline records duplicate checks for later threshold and embedding evaluation without changing the production deduplication decision. Qdrant audit queries use the top-1 result with no payload filter and no score threshold; the existing 24-hour filtered query remains responsible for deduplication and context retrieval.
+Langfuse instrumentation is limited to the news deduplication flow. The
+`deduplicate-news` parent includes the dedup embedding call, Qdrant retrieval
+observations, and explicit `duplicate-check` observations. Analyst LLM calls,
+post-analysis embeddings, pricing, storage, fetching, and outer pipeline steps
+are not observed.
+
+The pipeline records duplicate checks for later threshold and embedding
+evaluation without changing the production deduplication decision. Qdrant audit
+queries use the top-1 result with no payload filter and no score threshold; the
+existing 24-hour filtered query remains responsible for deduplication and
+context retrieval.
 
 Each `duplicate-check` observation contains:
 
@@ -271,11 +283,11 @@ LANGFUSE_TRACING_ENABLED=true
 ```
 
 Langfuse tracing is optional and disables itself when its API keys are not
-configured. Each `/api/read-news` execution creates one
-`process-news-pipeline` trace with nested ticker, retrieval, LangGraph analyst,
-generation, embedding, pricing, and storage observations. Azure AI calls use
-Langfuse's OpenAI wrapper to capture prompts, responses, latency, model names,
-token usage, and errors without recording API credentials.
+configured. Each `/api/read-news` execution records only the
+news-deduplication observations described above. The standard Azure OpenAI
+client is used for analyst calls and post-analysis embeddings; the Langfuse
+OpenAI wrapper is opted into only for deduplication embeddings and the dedup
+evaluation command.
 
 ## Evals
 

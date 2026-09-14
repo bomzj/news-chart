@@ -4,7 +4,6 @@ import json
 from src.config import app_config
 from src.news_pipeline.models import AnalysisInput, AnalysisOutput, AnalysisState
 from src.shared.azure_ai import azure_ai_client
-from src.shared.observability import langfuse_client
 
 
 ANALYST_SYSTEM_PROMPT = """You are a crypto news analyst filtering signal from noise. Your job: decide if a news article can realistically drive the price of the coin, and if yes — classify it.
@@ -89,8 +88,6 @@ def _build_user_prompt(input: AnalysisInput) -> str:
 async def _call_llm(
     deployment: str,
     user_prompt: str,
-    *,
-    analyst_role: str = "analyst",
 ) -> dict:
     """Call Azure AI via the Responses API and parse JSON response."""
     cfg = app_config().agents
@@ -103,8 +100,6 @@ async def _call_llm(
         ],
         reasoning={"effort": cfg.reasoning_effort},
         text={"format": {"type": "json_object"}},
-        name="classify-news",
-        metadata={"analyst_role": analyst_role},
         timeout=120.0,
     )
 
@@ -123,40 +118,20 @@ async def analyze_single(input: AnalysisInput) -> AnalysisOutput | None:
     from src.news_pipeline.graph import analysis_graph
 
     user_prompt = _build_user_prompt(input)
-    trace_input = {
-        "title": input.raw_news.title,
-        "source": input.raw_news.source,
-        "published_at": input.raw_news.published_at.isoformat(),
-        "similar_context_count": len(input.similar_context),
-    }
+    initial_state: AnalysisState = {"user_prompt": user_prompt}
+    final_state = await analysis_graph.ainvoke(initial_state)
 
-    with langfuse_client().start_as_current_observation(
-        as_type="agent",
-        name="analyze-news-item",
-        input=trace_input,
-    ) as observation:
-        initial_state: AnalysisState = {"user_prompt": user_prompt}
-        final_state = await analysis_graph.ainvoke(initial_state)
+    result = final_state.get("llm_result")
+    if result is None or result.get("discard"):
+        return None
 
-        result = final_state.get("llm_result")
-        if result is None or result.get("discard"):
-            observation.update(
-                output={
-                    "discarded": True,
-                    "predicted_by_model": final_state.get("predicted_by_model"),
-                }
-            )
-            return None
-
-        analysis = AnalysisOutput(
-            news_summary=result["news_summary"][:400],
-            sentiment=result["sentiment"],
-            impact=result["impact"],
-            confidence=result["confidence"],
-            predicted_by_model=final_state["predicted_by_model"],
-        )
-        observation.update(output=analysis.model_dump(mode="json"))
-        return analysis
+    return AnalysisOutput(
+        news_summary=result["news_summary"][:400],
+        sentiment=result["sentiment"],
+        impact=result["impact"],
+        confidence=result["confidence"],
+        predicted_by_model=final_state["predicted_by_model"],
+    )
 
 
 async def analyze_batch(inputs: list[AnalysisInput]) -> list[AnalysisOutput | None]:

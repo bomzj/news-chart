@@ -28,7 +28,7 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
     threshold = cfg.cosine_threshold
 
     texts = [f"{n.title} {n.description}" for n in news_items]
-    embeddings = await embed_texts(texts)
+    embeddings = await embed_texts(texts, observe=True)
     if len(embeddings) != len(news_items):
         raise ValueError("Embedding count does not match fetched news count")
 
