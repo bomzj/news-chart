@@ -232,7 +232,7 @@ tickers: [BTC]
 
 dedup:
   cosine_threshold: 0.90    # similarity score to consider as duplicate
-  lookback_hours: 24        # how far back to check for duplicates
+  lookback_hours: 168       # how far back to check for duplicates (one week)
 
 agents:
   confidence_threshold: 0.75  # below this → escalate to senior

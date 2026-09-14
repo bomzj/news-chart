@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings
 
 class DedupConfig(BaseModel):
     cosine_threshold: float = 0.90
-    lookback_hours: int = 24
+    lookback_hours: int = 168
 
 
 class AgentsConfig(BaseModel):

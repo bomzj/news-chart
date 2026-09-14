@@ -17,7 +17,7 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
     """
     Two-stage dedup:
     1. Intra-batch: pairwise cosine within current batch, cluster duplicates (keep first)
-    2. RAG dedup: check each survivor against Qdrant (last 24h), discard if ≥ threshold
+    2. RAG dedup: check each survivor against Qdrant (last week), discard if ≥ threshold
 
     Returns non-duplicate news paired with similar past context.
     """

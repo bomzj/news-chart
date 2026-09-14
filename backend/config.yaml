@@ -3,7 +3,7 @@ tickers:
 
 dedup:
   cosine_threshold: 0.90
-  lookback_hours: 24
+  lookback_hours: 168
 
 agents:
   confidence_threshold: 0.75
