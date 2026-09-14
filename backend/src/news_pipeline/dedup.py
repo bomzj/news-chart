@@ -92,12 +92,11 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
         if similar and similar[0].score >= threshold:
             continue  # duplicate found in DB, discard
 
-        # Collect similar context (lower threshold hits) for agent enrichment
+        # Collect up to 3 sufficiently similar news items for agent context.
         context_hits = await search_similar(
             vector=embedding,
             limit=3,
-            score_threshold=0.5,
-            filter_conditions=filter_conditions,
+            score_threshold=cfg.context_similarity_threshold,
         )
         context = [hit.payload for hit in context_hits if hit.payload]
         results.append((news, context))

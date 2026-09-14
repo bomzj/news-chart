@@ -3,6 +3,7 @@ tickers:
 
 dedup:
   cosine_threshold: 0.90
+  context_similarity_threshold: 0.75
   lookback_hours: 168
 
 agents:

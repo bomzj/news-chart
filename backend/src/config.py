@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings
 
 class DedupConfig(BaseModel):
     cosine_threshold: float = 0.90
+    context_similarity_threshold: float = 0.75
     lookback_hours: int = 168
 
 

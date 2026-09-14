@@ -232,6 +232,7 @@ tickers: [BTC]
 
 dedup:
   cosine_threshold: 0.90    # similarity score to consider as duplicate
+  context_similarity_threshold: 0.75  # minimum similarity for agent context
   lookback_hours: 168       # how far back to check for duplicates (one week)
 
 agents:

@@ -115,7 +115,7 @@ class _LangfuseStub:
 
 
 @pytest.mark.asyncio
-async def test_deduplicate_audits_all_items_and_preserves_filtered_path(monkeypatch):
+async def test_deduplicate_audits_all_items_and_uses_context_threshold(monkeypatch):
     news = [_make_news("A"), _make_news("B"), _make_news("C")]
     embeddings = [
         [1.0, 0.0],
@@ -140,11 +140,16 @@ async def test_deduplicate_audits_all_items_and_preserves_filtered_path(monkeypa
     assert search_similar.await_count == 4
     assert [call.kwargs["score_threshold"] for call in search_similar.await_args_list] == [
         0.9,
-        0.5,
+        0.75,
         0.9,
-        0.5,
+        0.75,
     ]
-    assert all(call.kwargs["filter_conditions"]["published_at"]["range"]["gte"] for call in search_similar.await_args_list)
+    calls = search_similar.await_args_list
+    assert all(
+        call.kwargs["filter_conditions"]["published_at"]["range"]["gte"]
+        for call in (calls[0], calls[2])
+    )
+    assert all("filter_conditions" not in call.kwargs for call in (calls[1], calls[3]))
     assert len(langfuse.observations) == 3
     assert all(observation["name"] == "duplicate-check" for observation in langfuse.observations)
     assert all(set(observation["input"]) == {"left", "right"} for observation in langfuse.observations)
