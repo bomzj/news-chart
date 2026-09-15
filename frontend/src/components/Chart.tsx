@@ -11,7 +11,7 @@ import {
   LogicalRange,
   MouseEventParams,
 } from "lightweight-charts";
-import { Timeframe, NewsItem, AggregatedNews } from "../lib/types";
+import { Kline, Timeframe, NewsItem, AggregatedNews } from "../lib/types";
 import { fetchKlines, candleDurationSec, tzOffsetSec } from "../lib/klines";
 import { fetchNews } from "../lib/news";
 import { aggregateNews } from "../lib/aggregate";
@@ -23,6 +23,50 @@ type Props = {
   timeframe: Timeframe;
   minImpact: number;
 };
+
+const LIVE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+function chartData(klines: Kline[], offset: number): CandlestickData<Time>[] {
+  return klines.map((k) => ({
+    time: (k.time + offset) as Time,
+    open: k.open,
+    high: k.high,
+    low: k.low,
+    close: k.close,
+  }));
+}
+
+function mergeCandleData(
+  current: CandlestickData<Time>[],
+  latest: CandlestickData<Time>[],
+): CandlestickData<Time>[] {
+  const byTime = new Map<number, CandlestickData<Time>>();
+
+  for (const candle of [...current, ...latest]) {
+    byTime.set(candle.time as number, candle);
+  }
+
+  return [...byTime.values()].sort(
+    (left, right) => (left.time as number) - (right.time as number),
+  );
+}
+
+function visibleBarTimes(
+  chart: IChartApi,
+  series: ISeriesApi<"Candlestick">,
+): { from: number; to: number } | null {
+  const range = chart.timeScale().getVisibleLogicalRange();
+  const bars = series.data() as CandlestickData<Time>[];
+  if (!range || bars.length === 0) return null;
+
+  const fromIndex = Math.max(0, Math.floor(range.from));
+  const toIndex = Math.min(bars.length - 1, Math.ceil(range.to));
+  const from = bars[fromIndex]?.time;
+  const to = bars[toIndex]?.time;
+
+  if (typeof from !== "number" || typeof to !== "number") return null;
+  return { from, to };
+}
 
 export default function Chart({ ticker, timeframe, minImpact }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,7 +84,9 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const fetchingOlderRef = useRef(false);
+  const refreshingRef = useRef(false);
   const initialLoadDoneRef = useRef(false);
+  const chartGenerationRef = useRef(0);
 
   const backendTicker = ticker.replace(/usdt$/i, "").toUpperCase();
 
@@ -107,6 +153,7 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
   // Load klines when ticker/timeframe changes
   useEffect(() => {
     let cancelled = false;
+    chartGenerationRef.current += 1;
     newsRef.current = [];
     loadedRangeRef.current = null;
 
@@ -117,14 +164,7 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
         const klines = await fetchKlines(ticker, timeframe);
         if (cancelled || !seriesRef.current) return;
 
-        const offset = tzOffsetSec();
-        const data: CandlestickData<Time>[] = klines.map((k) => ({
-          time: (k.time + offset) as Time,
-          open: k.open,
-          high: k.high,
-          low: k.low,
-          close: k.close,
-        }));
+        const data = chartData(klines, tzOffsetSec());
 
         seriesRef.current.setData(data);
         chartRef.current?.timeScale().fitContent();
@@ -144,12 +184,15 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
   // Fetch news based on visible chart range (always fetches all impact levels)
   const fetchNewsForRange = useCallback(
     async (from: number, to: number) => {
+      const generation = chartGenerationRef.current;
       try {
         const offset = tzOffsetSec();
         const candleDur = candleDurationSec(timeframe);
         const fromTs = new Date((from - offset) * 1000).toISOString();
         const toTs = new Date((to - offset + candleDur) * 1000).toISOString();
         const items = await fetchNews(backendTicker, fromTs, toTs, 1);
+        if (generation !== chartGenerationRef.current) return;
+
         newsRef.current = items;
         loadedRangeRef.current = { from, to };
         setNewsVersion((v) => v + 1);
@@ -159,6 +202,60 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
     },
     [backendTicker, timeframe],
   );
+
+  // Keep the latest candle and its news current while the page remains open.
+  const refreshChart = useCallback(async () => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    if (!chart || !series || refreshingRef.current) return;
+
+    const generation = chartGenerationRef.current;
+    const currentData = series.data() as CandlestickData<Time>[];
+    const visibleRange = chart.timeScale().getVisibleLogicalRange();
+    const followingLatest =
+      visibleRange !== null &&
+      currentData.length > 0 &&
+      visibleRange.to >= currentData.length - 8;
+
+    refreshingRef.current = true;
+    try {
+      const latest = chartData(await fetchKlines(ticker, timeframe), tzOffsetSec());
+      if (
+        generation !== chartGenerationRef.current ||
+        !seriesRef.current ||
+        !chartRef.current
+      ) return;
+
+      seriesRef.current.setData(mergeCandleData(currentData, latest));
+      if (followingLatest) {
+        chartRef.current.timeScale().scrollToRealTime();
+      }
+
+      const range = visibleBarTimes(chartRef.current, seriesRef.current);
+      if (range) {
+        await fetchNewsForRange(range.from, range.to);
+      }
+    } catch (err) {
+      console.error("Failed to refresh chart:", err);
+    } finally {
+      refreshingRef.current = false;
+    }
+  }, [fetchNewsForRange, ticker, timeframe]);
+
+  useEffect(() => {
+    const refresh = () => { void refreshChart(); };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+
+    const interval = window.setInterval(refresh, LIVE_REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshChart]);
 
   // Subscribe to visible range changes to fetch news
   useEffect(() => {
@@ -232,13 +329,7 @@ export default function Chart({ ticker, timeframe, minImpact }: Props) {
         .then((olderKlines) => {
           if (!seriesRef.current || olderKlines.length === 0) return;
 
-          const olderData: CandlestickData<Time>[] = olderKlines.map((k) => ({
-            time: (k.time + offset) as Time,
-            open: k.open,
-            high: k.high,
-            low: k.low,
-            close: k.close,
-          }));
+          const olderData = chartData(olderKlines, offset);
 
           const currentData = seriesRef.current.data() as CandlestickData<Time>[];
           const merged = [...olderData, ...currentData];

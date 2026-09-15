@@ -14,7 +14,7 @@ export async function fetchNews(
   if (fromTs) url.searchParams.set("from_ts", fromTs);
   if (toTs) url.searchParams.set("to_ts", toTs);
 
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), { cache: "no-store" });
   if (!res.ok) throw new Error(`News API error: ${res.status}`);
 
   const data = await res.json();

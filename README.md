@@ -411,11 +411,12 @@ npm run build
 2. Frontend fetches klines directly from Binance Futures public API
 3. Chart renders candlesticks and subscribes to visible range changes
 4. When visible range changes (scroll/zoom), frontend fetches news from backend for that time window
-5. News items are aggregated per candle:
+5. While the page remains open, the frontend refreshes the latest candles and visible news every five minutes and when the tab becomes visible
+6. News items are aggregated per candle:
    - **Color** = sentiment (red = bearish, green = bullish)
    - **Size** = impact (1 = smallest circle, 3 = largest)
-6. Impact slider filters out news below the threshold (client-side re-aggregation)
-7. Click on a marker shows popup with news items sorted by impact (most impactful first)
+7. Impact slider filters out news below the threshold (client-side re-aggregation)
+8. Click on a marker shows popup with news items sorted by impact (most impactful first)
 
 ### Frontend API Endpoint
 
