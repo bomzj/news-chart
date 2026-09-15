@@ -26,15 +26,24 @@ def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
     return float(np.dot(left_vector, right_vector) / (left_norm * right_norm))
 
 
-async def embed_texts(texts: list[str], *, observe: bool = False) -> list[list[float]]:
+async def embed_texts(
+    texts: list[str],
+    *,
+    observe: bool = False,
+    dimensions: int | None = None,
+) -> list[list[float]]:
     """Batch embed texts, optionally retaining a Langfuse embedding observation."""
     cfg = app_config().embeddings
+    dimensions_used = cfg.dimensions if dimensions is None else dimensions
+    if dimensions_used <= 0:
+        raise ValueError("Embedding dimensions must be positive")
+
     client = azure_ai_client(cfg.api_version, observe=observe)
     if observe:
         response = await client.embeddings.create(
             model=cfg.deployment,
             input=texts,
-            dimensions=cfg.dimensions,
+            dimensions=dimensions_used,
             name="embed-news",
             metadata={"input_count": len(texts)},
             timeout=60.0,
@@ -43,7 +52,7 @@ async def embed_texts(texts: list[str], *, observe: bool = False) -> list[list[f
         response = await client.embeddings.create(
             model=cfg.deployment,
             input=texts,
-            dimensions=cfg.dimensions,
+            dimensions=dimensions_used,
             timeout=60.0,
         )
 

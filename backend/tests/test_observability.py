@@ -102,6 +102,7 @@ async def test_embed_texts_only_adds_langfuse_options_when_observing(monkeypatch
     plain_kwargs = create.await_args.kwargs
     assert "name" not in plain_kwargs
     assert "metadata" not in plain_kwargs
+    assert plain_kwargs["dimensions"] == 256
     assert client_factory.call_args.kwargs == {"observe": False}
 
     create.reset_mock()
@@ -109,4 +110,9 @@ async def test_embed_texts_only_adds_langfuse_options_when_observing(monkeypatch
     observed_kwargs = create.await_args.kwargs
     assert observed_kwargs["name"] == "embed-news"
     assert observed_kwargs["metadata"] == {"input_count": 2}
+    assert observed_kwargs["dimensions"] == 256
     assert client_factory.call_args.kwargs == {"observe": True}
+
+    create.reset_mock()
+    await embed_texts(["first", "second"], dimensions=512)
+    assert create.await_args.kwargs["dimensions"] == 512

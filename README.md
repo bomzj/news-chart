@@ -334,12 +334,13 @@ article texts and a human-verified label:
 ```
 
 `expected_output` may also be the boolean `true` or `false`. The evaluation
-embeds both texts with the configured Azure embedding deployment, calculates
-their cosine similarity, and predicts `duplicate=true` when the score is at
-least the selected threshold. It emits one score per item: `duplicate-correct`
-(`BOOLEAN`, `1` when the prediction matches the label). Use manually verified
-labels for `expected_output`; the similarity values recorded by the production
-audit are system predictions, not ground truth.
+embeds both texts with the configured Azure embedding deployment and selected
+embedding dimensions, calculates their cosine similarity, and predicts
+`duplicate=true` when the score is at least the selected threshold. It emits
+one score per item: `duplicate-correct` (`BOOLEAN`, `1` when the prediction
+matches the label). Use manually verified labels for `expected_output`; the
+similarity values recorded by the production audit are system predictions, not
+ground truth.
 
 Naming follows one rule: the decision is a **duplicate**.
 
@@ -352,25 +353,31 @@ Run the commands from `backend/` so the evaluator can load `.env` and
 cd backend
 uv sync
 
-# Uses the news-duplicate-pairs dataset and dedup.cosine_threshold from config.yaml
+# Uses the news-duplicate-pairs dataset plus dedup.cosine_threshold and
+# embeddings.dimensions from config.yaml
 uv run news-dedup-evals
 
 # Evaluate a specific threshold
 uv run news-dedup-evals --threshold 0.90
 
+# Evaluate a specific threshold and embedding dimension
+uv run news-dedup-evals --threshold 0.90 --dimensions 1024
+
 # Evaluate another labeled dataset
 uv run news-dedup-evals \
   --dataset another-news-dataset \
-  --threshold 0.95
+  --threshold 0.95 \
+  --dimensions 512
 ```
 
 Before running, configure the Azure AI and Langfuse variables in
 `backend/.env`, including `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`,
 `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY`. The command prints the
 experiment result and records it in Langfuse. Each run is named
-`dedup-threshold-<value>`; run it with several thresholds and compare the
-`duplicate-correct` scores in Langfuse to choose a threshold that fits the
-labeled news pairs.
+`dedup-threshold-<value>-dimensions-<value>`; run it with several threshold
+and dimension combinations and compare the `duplicate-correct` scores in
+Langfuse to choose settings that fit the labeled news pairs. Both options
+default to `config.yaml` when omitted.
 
 ## Local Development
 

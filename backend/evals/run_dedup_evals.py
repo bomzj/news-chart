@@ -19,15 +19,20 @@ async def detect_duplicate(
     *,
     item: Any,
     threshold: float | None = None,
+    dimensions: int | None = None,
     **kwargs: Any,
 ) -> dict[str, bool]:
-    """Embed one dataset pair and classify it as duplicate using the given threshold."""
+    """Embed one dataset pair and classify it using the given threshold."""
     del kwargs
     threshold_used = (
         app_config().dedup.cosine_threshold if threshold is None else threshold
     )
     news_1, news_2 = item.input["news_1"], item.input["news_2"]
-    embeddings = await embed_texts([news_1, news_2], observe=True)
+    embeddings = await embed_texts(
+        [news_1, news_2],
+        observe=True,
+        dimensions=dimensions,
+    )
 
     if len(embeddings) != 2:
         raise ValueError(
@@ -86,14 +91,23 @@ def run_dedup_evals(
     *,
     dataset: str = DEFAULT_DATASET,
     threshold: float | None = None,
+    dimensions: int | None = None,
 ) -> ExperimentResult:
     """Run the duplicate-detection experiment against a Langfuse dataset."""
     if not dataset.strip():
         raise ValueError("Dataset name must not be empty")
 
+    config = app_config()
+    embedding_config = config.embeddings
     threshold_used = (
-        app_config().dedup.cosine_threshold if threshold is None else threshold
+        config.dedup.cosine_threshold if threshold is None else threshold
     )
+    dimensions_used = (
+        embedding_config.dimensions if dimensions is None else dimensions
+    )
+    if dimensions_used <= 0:
+        raise ValueError("Embedding dimensions must be positive")
+
     client = langfuse_client()
     langfuse_dataset = client.get_dataset(dataset)
     if not langfuse_dataset.items:
@@ -102,10 +116,13 @@ def run_dedup_evals(
             "before running the experiment"
         )
 
-    task = partial(detect_duplicate, threshold=threshold_used)
-    embedding_config = app_config().embeddings
+    task = partial(
+        detect_duplicate,
+        threshold=threshold_used,
+        dimensions=dimensions_used,
+    )
     return langfuse_dataset.run_experiment(
-        name=f"dedup-threshold-{threshold_used:.2f}",
+        name=f"dedup-threshold-{threshold_used:.2f}-dimensions-{dimensions_used}",
         description=(
             "Evaluate embedding cosine similarity against human-labeled news "
             "duplicate pairs"
@@ -116,14 +133,17 @@ def run_dedup_evals(
             "dataset": dataset,
             "threshold": threshold_used,
             "embedding_model": embedding_config.deployment,
-            "embedding_dimensions": embedding_config.dimensions,
+            "embedding_dimensions": dimensions_used,
         },
     )
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the Langfuse news duplicate-detection threshold evaluation."
+        description=(
+            "Run the Langfuse news duplicate-detection threshold and "
+            "embedding-dimension evaluation."
+        )
     )
     parser.add_argument(
         "--dataset",
@@ -136,6 +156,12 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Cosine similarity threshold; defaults to config.yaml",
     )
+    parser.add_argument(
+        "--dimensions",
+        type=int,
+        default=None,
+        help="Embedding dimensions; defaults to config.yaml",
+    )
     return parser
 
 
@@ -145,6 +171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = run_dedup_evals(
             dataset=args.dataset,
             threshold=args.threshold,
+            dimensions=args.dimensions,
         )
         print(result.format())
     finally:
