@@ -1,9 +1,10 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 import httpx
 
-from src.news_pipeline.fetch_news import _marketaux_symbol, CRYPTO_TICKERS
+from src.news_pipeline.fetch_news import CRYPTO_TICKERS, _marketaux_symbol, fetch_news
 from src.news_pipeline.extract import extract_full_texts, _fetch_and_extract
 
 
@@ -24,6 +25,59 @@ class TestMarketauxSymbol:
     def test_all_known_crypto_tickers_mapped(self):
         for ticker in CRYPTO_TICKERS:
             assert _marketaux_symbol(ticker) == f"CC:{ticker}"
+
+
+class TestFetchNews:
+    async def test_retries_marketaux_timeout(self, monkeypatch):
+        class FlakyClient:
+            calls = 0
+
+            async def get(self, *args, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    raise httpx.ReadTimeout("timed out")
+                return httpx.Response(
+                    200,
+                    json={"data": []},
+                    request=httpx.Request("GET", "https://api.marketaux.com/v1/news/all"),
+                )
+
+        client = FlakyClient()
+
+        async def fake_http_client():
+            return client
+
+        sleep = asyncio.sleep
+        monkeypatch.setattr("src.news_pipeline.fetch_news.secrets", lambda: SimpleNamespace(marketaux_api_key="test"))
+        monkeypatch.setattr("src.news_pipeline.fetch_news.http_client", fake_http_client)
+        monkeypatch.setattr("src.news_pipeline.fetch_news.asyncio.sleep", lambda _: sleep(0))
+
+        assert await fetch_news("BTC") == []
+        assert client.calls == 2
+
+    async def test_skips_ticker_after_repeated_marketaux_timeout(self, monkeypatch, caplog):
+        class TimeoutClient:
+            calls = 0
+
+            async def get(self, *args, **kwargs):
+                self.calls += 1
+                raise httpx.ReadTimeout("timed out")
+
+        client = TimeoutClient()
+
+        async def fake_http_client():
+            return client
+
+        sleep = asyncio.sleep
+        monkeypatch.setattr("src.news_pipeline.fetch_news.secrets", lambda: SimpleNamespace(marketaux_api_key="test"))
+        monkeypatch.setattr("src.news_pipeline.fetch_news.http_client", fake_http_client)
+        monkeypatch.setattr("src.news_pipeline.fetch_news.asyncio.sleep", lambda _: sleep(0))
+
+        with caplog.at_level("WARNING"):
+            assert await fetch_news("BTC") == []
+
+        assert client.calls == 2
+        assert "skipping ticker" in caplog.text
 
 
 class TestExtractFullTexts:

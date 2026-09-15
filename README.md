@@ -102,6 +102,9 @@ mark prices, but keep ingestion and price backfills running.
 If a previous background pipeline run is still active, a new trigger is
 skipped and returns `202 {"status":"already_running"}`.
 
+Transient MarketAux request failures are retried once. If the request still
+fails, that ticker is skipped and the background pipeline continues.
+
 ```
 MarketAux API ──▶ Raw news articles (filtered by ticker)
        │
