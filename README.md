@@ -203,11 +203,21 @@ Fetch historical prices from Binance klines at:
   published_at + 1h, +24h, +7d, +30d
        │
        ▼
+Group requested timestamps into one-minute ranges of at most 1000 klines
+       │
+       ▼
+Fetch each range in one Binance request; use Spot for remaining ranges after a Futures fallback
+       │
+       ▼
 Calculate: (historical_price - price_at_ingestion) / price_at_ingestion
        │
        ▼
 Batch update Qdrant payloads with realized deltas
 ```
+
+The price updater coalesces historical lookups instead of making one Binance
+request per news point. The HTTP endpoint also skips overlapping backfill runs,
+so a slow run cannot multiply requests when the scheduler triggers again.
 
 ## Data Model (Qdrant Payload)
 

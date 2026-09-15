@@ -1,6 +1,8 @@
 import pytest
 from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
 
+from src.price_updater import updater
 from src.price_updater.updater import price_delta_pct, DELTA_MAP
 
 
@@ -72,3 +74,52 @@ class TestTimeWindowEligibility:
         published = datetime.now(timezone.utc) - timedelta(days=31)
         delta_duration = DELTA_MAP["30d"][0]
         assert datetime.now(timezone.utc) >= published + delta_duration
+
+
+async def test_update_deltas_fetches_historical_prices_in_one_batch(monkeypatch):
+    published_times = [
+        datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc),
+    ]
+    points = [
+        SimpleNamespace(
+            id=str(index),
+            payload={
+                "published_at": published_at.isoformat(),
+                "price_at_ingestion": 100.0,
+            },
+        )
+        for index, published_at in enumerate(published_times)
+    ]
+    target_timestamps = [
+        int((published_at + timedelta(hours=1)).timestamp() * 1000)
+        for published_at in published_times
+    ]
+    price_calls: list[tuple[str, list[int]]] = []
+    updates: list[tuple[list[str], list[dict]]] = []
+
+    async def scroll_with_filter(*args, **kwargs):
+        return points
+
+    async def historical_prices(symbol, timestamps_ms):
+        price_calls.append((symbol, timestamps_ms))
+        return dict.fromkeys(timestamps_ms, 105.0)
+
+    async def batch_update_payload(point_ids, payloads):
+        updates.append((point_ids, payloads))
+
+    monkeypatch.setattr(updater, "scroll_with_filter", scroll_with_filter)
+    monkeypatch.setattr(updater, "historical_prices", historical_prices)
+    monkeypatch.setattr(updater, "batch_update_payload", batch_update_payload)
+
+    assert await updater.update_deltas_for_window("BTC", "1h") == 2
+    assert price_calls == [("BTCUSDT", target_timestamps)]
+    assert updates == [
+        (
+            ["0", "1"],
+            [
+                {"realized_price_delta_pct_1h": 0.05},
+                {"realized_price_delta_pct_1h": 0.05},
+            ],
+        )
+    ]

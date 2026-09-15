@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 import httpx
 
 from src.config import app_config, DeltaWindow
-from src.shared.binance import historical_price
+from src.shared.binance import historical_prices
 from src.shared.qdrant import scroll_with_filter, batch_update_payload
 
 logger = logging.getLogger(__name__)
@@ -46,23 +46,35 @@ async def update_deltas_for_window(ticker: str, window: DeltaWindow) -> int:
         return 0
 
     symbol = f"{ticker}USDT"
-    point_ids: list[str] = []
-    payloads: list[dict] = []
-
+    targets: list[tuple[object, int]] = []
     for point in points:
         payload = point.payload
         published_at = datetime.fromisoformat(payload["published_at"])
         target_time = published_at + delta_duration
-        target_ts_ms = int(target_time.timestamp() * 1000)
+        targets.append((point, int(target_time.timestamp() * 1000)))
 
-        try:
-            price_after = await historical_price(symbol, target_ts_ms)
-        except (ValueError, httpx.HTTPError) as exc:
+    try:
+        prices = await historical_prices(symbol, [target_ts_ms for _, target_ts_ms in targets])
+    except (ValueError, httpx.HTTPError) as exc:
+        logger.warning(
+            "Failed to fetch %s historical prices for %s: %s",
+            window,
+            ticker,
+            exc,
+        )
+        return 0
+
+    point_ids: list[str] = []
+    payloads: list[dict] = []
+    for point, target_ts_ms in targets:
+        payload = point.payload
+        price_after = prices.get(target_ts_ms)
+        if price_after is None:
             logger.warning(
-                "Failed to fetch %s historical price for %s: %s",
+                "No %s historical price for %s at timestamp %d",
                 window,
                 ticker,
-                exc,
+                target_ts_ms,
             )
             continue
 
