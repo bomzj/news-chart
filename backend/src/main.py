@@ -47,5 +47,7 @@ async def shutdown():
 
 
 @app.get("/health")
-async def health():
+@app.get("/api/heartbeat")
+async def heartbeat():
+    """Return a dependency-free liveness response for uptime monitors."""
     return {"status": "ok"}

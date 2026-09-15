@@ -15,6 +15,7 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 4. **Snapshots price** from Binance perpetual futures at ingestion time
 5. **Stores enriched vectors** in Qdrant Cloud with full metadata
 6. **Backfills realized price deltas** (1h, 24h, 7d, 30d) via a separate cron-triggered endpoint
+7. **Exposes a dependency-free heartbeat endpoint** for keeping the Render service awake
 
 ## Tech Stack
 
@@ -46,10 +47,9 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 │  └──────────────┘     └──────┬───────┘                         │
 │                              │                                  │
 │  ┌──────────────┐     ┌──────┴────────┐                        │
-│  │ Cron: 10 min │────▶│ POST          │                        │
-│  │ update-prices│     │/api/update-   │                        │
-│  └──────────────┘     │    prices     │                        │
-│                       └──────┬────────┘                        │
+│  │ Cron: 10 min │────▶│ GET          │                         │
+│  │ heartbeat    │     │ /api/heartbeat│                        │
+│  └──────────────┘     └──────┬────────┘                        │
 │                              │                                  │
 │         ┌────────────────────┼────────────────────┐            │
 │         │            FastAPI App                   │            │
@@ -83,8 +83,9 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
   │ (news feed) │
   └─────────────┘
 ```
-**Warning** Render on free tier shutdowns a web service after 15 minutes of receiving no incoming requests, so we trigger our back end at least every 10 minutes via cron job.
-To be more precise we call via /api/update-prices every 10 minutes which is literally free due to generous Binance API limits.
+**Warning** Render on free tier shuts down a web service after 15 minutes without incoming requests, so call `GET /api/heartbeat` at least every 10 minutes via cron job. The heartbeat handler does not call Binance market-data endpoints, so it cannot trigger Binance rate limits or HTTP 418 responses.
+
+Keep `/api/update-prices` on its own schedule when realized price deltas need to be backfilled; it is no longer used as the service heartbeat.
 
 **Note** MarketAux API costs credits, to not exceed monthly budget we can call the API not often than 15 minutes.
 
@@ -191,7 +192,7 @@ Each `duplicate-check` observation contains:
 
 `output.duplicate` is the current system classification (`cosine_similarity >= threshold`), not verified ground truth. Human labels should be added later as Langfuse scores or dataset expected outputs. For historical Qdrant matches, the logged `right.description` is populated from the existing `news_full_text` payload.
 
-### `/api/update-prices` (every 10 minutes)
+### `/api/update-prices` (scheduled separately)
 
 ```
 Query Qdrant: news with null realized_price_delta fields
@@ -378,6 +379,9 @@ uv run start
 curl -X POST http://localhost:8000/api/read-news
 curl -X POST http://localhost:8000/api/update-prices
 
+# Keep the backend awake without calling external APIs
+curl http://localhost:8000/api/heartbeat
+
 # Run tests
 uv run pytest
 ```
@@ -466,7 +470,8 @@ The `render.yaml` at the repo root defines:
 - **Web service**: FastAPI app serving pipeline + chart API endpoints
 - **Static site**: Next.js frontend (static export to `out/`)
 - **Cron job (15 min)**: hits `/api/read-news`
-- **Cron job (10 min)**: hits `/api/update-prices`
+- **Cron job (10 min)**: sends `GET /api/heartbeat` to keep the backend awake
+- **Price backfill cron**: sends `POST /api/update-prices` on the desired backfill schedule
 
 Set all environment variables in the Render dashboard:
 - Backend: `MARKETAUX_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`
