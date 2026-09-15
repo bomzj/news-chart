@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+import httpx
 from fastapi import APIRouter
 from starlette.responses import JSONResponse
 
@@ -57,7 +58,16 @@ async def _process_ticker(ticker: str) -> tuple[int, int]:
         return 0, discarded_count
 
     symbol = f"{ticker}USDT"
-    current_price = await mark_price(symbol)
+    try:
+        current_price = await mark_price(symbol)
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning(
+            "Skipping %d analyzed news items for %s because price lookup failed: %s",
+            len(kept),
+            ticker,
+            exc,
+        )
+        return 0, discarded_count
 
     texts = [f"{n.title} {n.description}" for (n, _), _ in kept]
     embeddings = await embed_texts(texts)

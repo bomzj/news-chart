@@ -26,7 +26,7 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 | Vector Database | Qdrant Cloud |
 | LLM Provider | Azure AI (GPT-5 Nano / Mini) |
 | Embeddings | Azure AI text-embedding-3-large (256 dims) |
-| Price Data | Binance USDⓈ-M Futures API |
+| Price Data | Binance USDⓈ-M Futures API with Spot API fallback |
 | News Source | MarketAux API |
 | Hosting | Render (back-end web service + front end) |
 | Cron | https://cron-job.org |
@@ -87,6 +87,12 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 To be more precise we call via /api/update-prices every 10 minutes which is literally free due to generous Binance API limits.
 
 **Note** MarketAux API costs credits, to not exceed monthly budget we can call the API not often than 15 minutes.
+
+The backend uses Binance Futures mark prices and klines when available. If the
+Futures API is rate-limited or unavailable (including HTTP 418 responses from
+an IP ban), it falls back to the equivalent public Spot ticker or kline
+endpoint. Fallback prices are Spot last-trade/close prices rather than Futures
+mark prices, but keep ingestion and price backfills running.
 
 ## Pipeline Flows
 

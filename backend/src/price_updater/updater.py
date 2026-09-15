@@ -1,8 +1,13 @@
+import logging
 from datetime import datetime, timezone, timedelta
+
+import httpx
 
 from src.config import app_config, DeltaWindow
 from src.shared.binance import historical_price
 from src.shared.qdrant import scroll_with_filter, batch_update_payload
+
+logger = logging.getLogger(__name__)
 
 
 # Maps delta window config strings to timedelta and payload field name
@@ -52,7 +57,13 @@ async def update_deltas_for_window(ticker: str, window: DeltaWindow) -> int:
 
         try:
             price_after = await historical_price(symbol, target_ts_ms)
-        except (ValueError, Exception):
+        except (ValueError, httpx.HTTPError) as exc:
+            logger.warning(
+                "Failed to fetch %s historical price for %s: %s",
+                window,
+                ticker,
+                exc,
+            )
             continue
 
         delta = price_delta_pct(payload["price_at_ingestion"], price_after)
