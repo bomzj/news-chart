@@ -99,6 +99,9 @@ mark prices, but keep ingestion and price backfills running.
 
 ### `/api/read-news` (every 15 minutes)
 
+If a previous background pipeline run is still active, a new trigger is
+skipped and returns `202 {"status":"already_running"}`.
+
 ```
 MarketAux API ──▶ Raw news articles (filtered by ticker)
        │

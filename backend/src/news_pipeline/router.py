@@ -20,6 +20,7 @@ from src.news_pipeline.store import store_news_batch
 router = APIRouter()
 logger = logging.getLogger(__name__)
 _background_tasks: set[asyncio.Task[None]] = set()
+news_pipeline_lock = asyncio.Lock()
 
 
 async def _process_ticker(ticker: str) -> tuple[int, int]:
@@ -121,14 +122,30 @@ def _report_pipeline_task(task: asyncio.Task[None]) -> None:
         logger.exception("News pipeline failed before completion")
 
 
+def release_news_pipeline_lock(task: asyncio.Task[None]) -> None:
+    if news_pipeline_lock.locked():
+        news_pipeline_lock.release()
+
+
 @router.post("/api/read-news")
 async def read_news():
     """
     Trigger news pipeline in background, return 202 immediately.
     Keeps cron services happy (tiny response, no timeout).
     """
-    task = asyncio.create_task(_run_pipeline())
+    if news_pipeline_lock.locked():
+        logger.warning("Skipping news pipeline because another run is still in progress")
+        return JSONResponse(status_code=202, content={"status": "already_running"})
+
+    await news_pipeline_lock.acquire()
+    try:
+        task = asyncio.create_task(_run_pipeline())
+    except BaseException:
+        news_pipeline_lock.release()
+        raise
+
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+    task.add_done_callback(release_news_pipeline_lock)
     task.add_done_callback(_report_pipeline_task)
     return JSONResponse(status_code=202, content={"status": "accepted"})
