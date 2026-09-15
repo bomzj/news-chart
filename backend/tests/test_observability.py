@@ -18,6 +18,7 @@ def test_azure_ai_client_defaults_to_standard_and_opts_into_langfuse(monkeypatch
     monkeypatch.setattr(azure_ai, "AsyncAzureOpenAI", standard_factory)
     monkeypatch.setattr(azure_ai, "LangfuseAsyncAzureOpenAI", observed_factory)
     monkeypatch.setattr(azure_ai, "langfuse_client", langfuse_factory)
+    monkeypatch.setattr(azure_ai, "langfuse_tracing_enabled", lambda: True)
     monkeypatch.setattr(
         azure_ai,
         "secrets",
@@ -38,6 +39,38 @@ def test_azure_ai_client_defaults_to_standard_and_opts_into_langfuse(monkeypatch
         standard_factory.assert_called_once()
         observed_factory.assert_called_once()
         langfuse_factory.assert_called_once_with()
+    finally:
+        azure_ai._clients.clear()
+
+
+def test_azure_ai_client_skips_langfuse_when_tracing_is_disabled(monkeypatch):
+    azure_ai._clients.clear()
+    standard_client = object()
+    observed_client = object()
+    standard_factory = Mock(return_value=standard_client)
+    observed_factory = Mock(return_value=observed_client)
+    langfuse_factory = Mock()
+
+    monkeypatch.setattr(azure_ai, "AsyncAzureOpenAI", standard_factory)
+    monkeypatch.setattr(azure_ai, "LangfuseAsyncAzureOpenAI", observed_factory)
+    monkeypatch.setattr(azure_ai, "langfuse_client", langfuse_factory)
+    monkeypatch.setattr(azure_ai, "langfuse_tracing_enabled", lambda: False)
+    monkeypatch.setattr(
+        azure_ai,
+        "secrets",
+        lambda: SimpleNamespace(
+            azure_ai_endpoint="https://example.test",
+            azure_ai_api_key="test-key",
+        ),
+    )
+
+    try:
+        client = azure_ai.azure_ai_client("2025-04-01-preview", observe=True)
+
+        assert client is standard_client
+        standard_factory.assert_called_once()
+        observed_factory.assert_not_called()
+        langfuse_factory.assert_not_called()
     finally:
         azure_ai._clients.clear()
 

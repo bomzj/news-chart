@@ -9,15 +9,23 @@ logger = logging.getLogger(__name__)
 _client: Langfuse | None = None
 
 
+def langfuse_tracing_enabled() -> bool:
+    cfg = secrets()
+    return bool(
+        cfg.langfuse_tracing_enabled
+        and cfg.langfuse_public_key
+        and cfg.langfuse_secret_key
+    )
+
+
 def langfuse_client() -> Langfuse:
     global _client
     if _client is None:
         cfg = secrets()
-        configured = bool(cfg.langfuse_public_key and cfg.langfuse_secret_key)
-        enabled = cfg.langfuse_tracing_enabled and configured
+        enabled = langfuse_tracing_enabled()
 
-        if cfg.langfuse_tracing_enabled and not configured:
-            logger.warning("Langfuse tracing disabled: API keys are not configured")
+        if cfg.langfuse_tracing_enabled and not enabled:
+            logger.info("Langfuse tracing disabled: API keys are not configured")
 
         _client = Langfuse(
             public_key=cfg.langfuse_public_key or "disabled",

@@ -475,6 +475,15 @@ The `render.yaml` at the repo root defines:
 
 Set all environment variables in the Render dashboard:
 - Backend: `MARKETAUX_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`
+- Optional Langfuse tracing: `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
+  `LANGFUSE_BASE_URL`, `LANGFUSE_TRACING_ENVIRONMENT`, and
+  `LANGFUSE_TRACING_ENABLED`
 - Frontend: `NEXT_PUBLIC_API_URL` (set to the backend service's external URL)
+
+Render does not load `backend/.env`. To enable Langfuse tracing, enter the
+Langfuse public and secret keys in the backend service's Environment settings
+and redeploy. If the keys are omitted, set `LANGFUSE_TRACING_ENABLED=false`;
+the backend will continue using the standard Azure client without Langfuse
+tracing.
 
 The backend reads `config.yaml` from the repo for non-secret settings.
