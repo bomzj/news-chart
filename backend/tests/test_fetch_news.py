@@ -27,6 +27,18 @@ class TestMarketauxSymbol:
 
 
 class TestExtractFullTexts:
+    async def test_unexpected_article_failure_does_not_abort_batch(self, monkeypatch):
+        async def fail_for_one(url):
+            if url == "bad":
+                raise RuntimeError("unexpected extraction failure")
+            return "extracted article text"
+
+        monkeypatch.setattr("src.news_pipeline.extract._fetch_and_extract", fail_for_one)
+
+        results = await extract_full_texts([{"url": "bad"}, {"url": "good"}])
+
+        assert results == [None, "extracted article text"]
+
     async def test_skip_on_empty_url(self):
         articles = [{"url": "", "description": "fallback text", "snippet": "snip"}]
         results = await extract_full_texts(articles)

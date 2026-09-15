@@ -19,6 +19,7 @@ from src.news_pipeline.store import store_news_batch
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+_background_tasks: set[asyncio.Task[None]] = set()
 
 
 async def _process_ticker(ticker: str) -> tuple[int, int]:
@@ -111,11 +112,23 @@ async def _run_pipeline():
     )
 
 
+def _report_pipeline_task(task: asyncio.Task[None]) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        logger.warning("News pipeline task was cancelled")
+    except Exception:
+        logger.exception("News pipeline failed before completion")
+
+
 @router.post("/api/read-news")
 async def read_news():
     """
     Trigger news pipeline in background, return 202 immediately.
     Keeps cron services happy (tiny response, no timeout).
     """
-    asyncio.create_task(_run_pipeline())
+    task = asyncio.create_task(_run_pipeline())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    task.add_done_callback(_report_pipeline_task)
     return JSONResponse(status_code=202, content={"status": "accepted"})

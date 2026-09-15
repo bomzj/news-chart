@@ -16,6 +16,7 @@ async def extract_full_texts(articles: list[dict]) -> list[str | None]:
     """
     Fetch and extract full article text from URLs in parallel.
     Returns None for articles whose URL is unavailable (4xx, 5xx, timeout).
+    Unexpected failures for an individual article are also isolated as None.
     Runs gc.collect() after all extractions to free lxml DOM trees retained by trafilatura.
     """
     semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
@@ -30,9 +31,31 @@ async def extract_full_texts(articles: list[dict]) -> list[str | None]:
         async with semaphore:
             return await _fetch_and_extract(url)
 
-    results = await asyncio.gather(*[_extract_one(a) for a in articles])
-    gc.collect()
-    return results
+    try:
+        extracted = await asyncio.gather(
+            *[_extract_one(article) for article in articles],
+            return_exceptions=True,
+        )
+        results: list[str | None] = []
+        for article, result in zip(articles, extracted):
+            if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result
+
+                url = (
+                    article.get("url", "<invalid article>")
+                    if isinstance(article, dict)
+                    else "<invalid article>"
+                )
+                logger.warning("Failed to extract %s: %s, skipping", url, result)
+                results.append(None)
+                continue
+
+            results.append(result)
+
+        return results
+    finally:
+        gc.collect()
 
 
 async def _fetch_and_extract(url: str) -> str | None:
