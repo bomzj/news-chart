@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 
 Sentiment = Literal["bullish", "bearish"]
+AnalysisLabel = Literal["noise", "bullish", "bearish", "uncertain"]
 
 # 1: Notable (hours) — exchange listings, token burns, whale moves
 # 2: High (days) — ETF decisions, major hacks, country-level regulation
@@ -29,7 +30,6 @@ class NewsRecord(BaseModel):
     news_full_text: str
     sentiment: Sentiment
     impact: Impact
-    confidence: float
     predicted_by_model: str
     price_at_ingestion: float
     realized_price_delta_pct_1h: float | None = None
@@ -48,7 +48,6 @@ class AnalysisKept(BaseModel):
     news_summary: str
     sentiment: Sentiment
     impact: Impact
-    confidence: float
 
 
 class AnalysisDiscarded(BaseModel):

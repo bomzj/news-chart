@@ -8,7 +8,6 @@ export type NewsItem = {
   sentiment: Sentiment;
   impact: Impact;
   news_summary: string;
-  confidence: number;
   predicted_by_model: string;
   price_at_ingestion: number;
 };

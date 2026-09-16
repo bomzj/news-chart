@@ -85,7 +85,6 @@ async def _process_ticker(ticker: str) -> tuple[int, int]:
             news_full_text=news.full_text,
             sentiment=result.sentiment,
             impact=result.impact,
-            confidence=result.confidence,
             predicted_by_model=result.predicted_by_model,
             price_at_ingestion=current_price,
         )

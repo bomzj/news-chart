@@ -8,28 +8,42 @@ from src.news_pipeline.models import AnalysisState
 async def junior_analyst(state: AnalysisState) -> AnalysisState:
     """Cheap model (Nano) evaluates the news item first."""
     cfg = app_config().agents
-    result = await _call_llm(cfg.nano_deployment, state["user_prompt"])
-    return {"llm_result": result, "predicted_by_model": cfg.nano_deployment}
+    result = await _call_llm(
+        cfg.nano_deployment,
+        state["user_prompt"],
+        stage="junior",
+    )
+    return {
+        "llm_result": result,
+        "junior_label": result.label,
+        "predicted_by_model": cfg.nano_deployment,
+    }
 
 
 def route_after_junior(state: AnalysisState) -> str:
-    """Route based on junior's verdict: discard → end, low confidence → senior, else → end."""
-    cfg = app_config().agents
+    """Route uncertain Junior results to Senior; all other labels finish."""
     result = state.get("llm_result")
 
-    if result is None or result.get("discard"):
+    if result is None:
         return END
 
-    if result.get("confidence", 0) < cfg.confidence_threshold:
-        return "senior_analyst"
+    match result.label:
+        case "uncertain":
+            return "senior_analyst"
+        case "noise" | "bullish" | "bearish":
+            return END
 
-    return END
+    raise ValueError(f"Unsupported analyst label: {result.label}")
 
 
 async def senior_analyst(state: AnalysisState) -> AnalysisState:
     """Expensive model (Mini) re-evaluates when junior is uncertain."""
     cfg = app_config().agents
-    result = await _call_llm(cfg.mini_deployment, state["user_prompt"])
+    result = await _call_llm(
+        cfg.mini_deployment,
+        state["user_prompt"],
+        stage="senior",
+    )
     return {"llm_result": result, "predicted_by_model": cfg.mini_deployment}
 
 

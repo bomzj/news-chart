@@ -10,8 +10,9 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 2. **Deduplicates** using cosine similarity on embeddings — both within the current batch and against the last 24h in the vector DB
 3. **Analyzes & filters** via a LangGraph `StateGraph` (conditional routing):
    - Junior analyst (GPT-5 Nano) evaluates each news item in parallel
-   - Noise/unimportant news is **discarded** (never stored) — only price-driving news is kept
-   - If confidence < threshold → graph routes to Senior analyst (GPT-5 Mini)
+   - Analyst labels each item `noise`, `bullish`, `bearish`, or `uncertain`
+   - Junior `uncertain` results route to Senior analyst (GPT-5 Mini)
+   - Noise and unresolved uncertainty are **discarded** (never stored) — only directional signals are kept
 4. **Snapshots price** from Binance perpetual futures at ingestion time
 5. **Stores enriched vectors** in Qdrant Cloud with full metadata
 6. **Backfills realized price deltas** (1h, 24h, 7d, 30d) via a separate cron-triggered endpoint
@@ -141,10 +142,11 @@ LangGraph StateGraph (graph.py):
   ┌─────────────────────────────────────────────────────────┐
   │ START → junior_analyst (GPT-5 Nano)                     │
   │           │                                             │
-  │           ├── discard=true → END (news dropped)         │
-  │           ├── confidence ≥ 0.75 → END (result kept)     │
-  │           └── confidence < 0.75 → senior_analyst        │
-  │                                    (GPT-5 Mini) → END   │
+  │           ├── noise → END (news dropped)                │
+  │           ├── bullish/bearish → END (result kept)       │
+  │           └── uncertain → senior_analyst (GPT-5 Mini)   │
+  │                              ├── bullish/bearish → keep │
+  │                              └── noise/uncertain → drop │
   └─────────────────────────────────────────────────────────┘
   Batch: asyncio.gather over graph.ainvoke() per news item
        │
@@ -155,13 +157,20 @@ Fetch Binance mark price (BTCUSDT perpetual) — only for kept news
 Batch upsert to Qdrant (vector + full metadata payload)
 ```
 
-### Langfuse Deduplication Observability
+### Langfuse Observability
 
-Langfuse instrumentation is limited to the news deduplication flow. The
-`deduplicate-news` parent includes the dedup embedding call, Qdrant retrieval
-observations, and explicit `duplicate-check` observations. Analyst LLM calls,
-post-analysis embeddings, pricing, storage, fetching, and outer pipeline steps
-are not observed.
+The `deduplicate-news` parent includes the dedup embedding call, Qdrant
+retrieval observations, and explicit `duplicate-check` observations.
+
+Each analyzed news item also creates an `analyze-news` parent chain. The
+Langfuse Azure OpenAI wrapper records each `classify-news` generation, including
+the model, prompt, response, latency, token usage, and errors. The parent
+output records the Junior label, final label, whether escalation occurred, and
+whether the item was stored or discarded.
+
+The analyst label is a classification, not a probability. No numerical
+confidence score or evaluator score is recorded. Human labels can be added
+later for calibration and quality evaluation.
 
 The pipeline records duplicate checks for later threshold and embedding
 evaluation without changing the production deduplication decision. Qdrant audit
@@ -236,7 +245,6 @@ so a slow run cannot multiply requests when the scheduler triggers again.
   "news_full_text": "Full article text...",
   "sentiment": "bullish",
   "impact": 3,
-  "confidence": 0.78,
   "predicted_by_model": "gpt-5.4-nano",
   "price_at_ingestion": 68250.00,
   "realized_price_delta_pct_1h": null,
@@ -246,7 +254,11 @@ so a slow run cannot multiply requests when the scheduler triggers again.
 }
 ```
 
-**Sentiment:** Binary — `"bullish"` (positive price pressure) or `"bearish"` (negative price pressure). No neutral — if news can't clearly drive price in either direction, it's discarded as noise and never stored.
+**Analyst label:** The internal four-way classifier returns `"noise"`,
+`"bullish"`, `"bearish"`, or `"uncertain"`. Junior uncertainty is sent to the
+Senior analyst. If Senior returns noise or remains uncertain, the article is
+discarded. Only bullish and bearish results are stored, so the Qdrant payload
+and chart API continue to expose binary `sentiment`.
 
 **Impact Scale (1-3):**
 
@@ -271,7 +283,6 @@ dedup:
   lookback_hours: 168       # how far back to check for duplicates (one week)
 
 agents:
-  confidence_threshold: 0.75  # below this → escalate to senior
   nano_deployment: gpt-5.4-nano
   mini_deployment: gpt-5.4-mini
   api_version: "2025-04-01-preview"
@@ -306,10 +317,10 @@ LANGFUSE_TRACING_ENABLED=true
 ```
 
 Langfuse tracing is optional and disables itself when its API keys are not
-configured. Each `/api/read-news` execution records only the
-news-deduplication observations described above. The standard Azure OpenAI
-client is used for analyst calls and post-analysis embeddings; the Langfuse
-OpenAI wrapper is opted into only for deduplication embeddings and the dedup
+configured. Each `/api/read-news` execution records deduplication observations
+and analyst classification traces. The standard Azure OpenAI client remains
+the fallback when tracing is disabled; the Langfuse OpenAI wrapper is opted
+into for analyst generations, deduplication embeddings, and the dedup
 evaluation command.
 
 ## Evals
@@ -456,7 +467,6 @@ Response:
       "sentiment": "bullish",
       "impact": 3,
       "news_summary": "BTC ETF inflows hit record...",
-      "confidence": 0.82,
       "predicted_by_model": "gpt-5.4-nano",
       "price_at_ingestion": 68250.00
     }

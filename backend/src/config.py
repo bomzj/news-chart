@@ -13,7 +13,6 @@ class DedupConfig(BaseModel):
 
 
 class AgentsConfig(BaseModel):
-    confidence_threshold: float = 0.75
     nano_deployment: str = "gpt-5.4-nano"
     mini_deployment: str = "gpt-5.4-mini"
     api_version: str = "2025-04-01-preview"

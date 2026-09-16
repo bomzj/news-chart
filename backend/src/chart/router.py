@@ -81,7 +81,6 @@ async def news(
             "sentiment": point.payload.get("sentiment"),
             "impact": point.payload.get("impact"),
             "news_summary": point.payload.get("news_summary"),
-            "confidence": point.payload.get("confidence"),
             "predicted_by_model": point.payload.get("predicted_by_model"),
             "price_at_ingestion": point.payload.get("price_at_ingestion"),
         }

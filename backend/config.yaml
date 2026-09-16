@@ -7,7 +7,6 @@ dedup:
   lookback_hours: 168
 
 agents:
-  confidence_threshold: 0.75
   nano_deployment: gpt-5.4-nano
   mini_deployment: gpt-5.4-mini
   api_version: "2025-04-01-preview"
