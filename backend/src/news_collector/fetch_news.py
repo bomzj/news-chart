@@ -5,8 +5,8 @@ import httpx
 
 from src.config import secrets
 from src.shared.http import http_client
-from src.news_pipeline.extract import extract_full_texts
-from src.news_pipeline.condense import condense_texts
+from src.news_collector.extract import extract_full_texts
+from src.news_collector.condense import condense_texts
 from src.shared.types import RawNews
 
 logger = logging.getLogger(__name__)

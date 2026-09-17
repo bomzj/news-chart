@@ -2,7 +2,7 @@ import asyncio
 from typing import Literal
 
 from src.config import app_config
-from src.news_pipeline.models import (
+from src.news_collector.models import (
     AnalystBearish,
     AnalystBullish,
     AnalystNoise,
@@ -159,7 +159,7 @@ async def analyze_single(input: AnalysisInput) -> AnalysisOutput | None:
     Junior analyst first, escalating uncertain results to Senior.
     Returns None if the final result is noise or uncertain.
     """
-    from src.news_pipeline.graph import analysis_graph
+    from src.news_collector.graph import analysis_graph
 
     user_prompt = _build_user_prompt(input)
     initial_state: AnalysisState = {"user_prompt": user_prompt}

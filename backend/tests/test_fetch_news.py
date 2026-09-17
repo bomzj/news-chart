@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import pytest
 import httpx
 
-from src.news_pipeline.fetch_news import CRYPTO_TICKERS, _marketaux_symbol, fetch_news
-from src.news_pipeline.extract import extract_full_texts, _fetch_and_extract
+from src.news_collector.fetch_news import CRYPTO_TICKERS, _marketaux_symbol, fetch_news
+from src.news_collector.extract import extract_full_texts, _fetch_and_extract
 
 
 class TestMarketauxSymbol:
@@ -48,9 +48,9 @@ class TestFetchNews:
             return client
 
         sleep = asyncio.sleep
-        monkeypatch.setattr("src.news_pipeline.fetch_news.secrets", lambda: SimpleNamespace(marketaux_api_key="test"))
-        monkeypatch.setattr("src.news_pipeline.fetch_news.http_client", fake_http_client)
-        monkeypatch.setattr("src.news_pipeline.fetch_news.asyncio.sleep", lambda _: sleep(0))
+        monkeypatch.setattr("src.news_collector.fetch_news.secrets", lambda: SimpleNamespace(marketaux_api_key="test"))
+        monkeypatch.setattr("src.news_collector.fetch_news.http_client", fake_http_client)
+        monkeypatch.setattr("src.news_collector.fetch_news.asyncio.sleep", lambda _: sleep(0))
 
         assert await fetch_news("BTC") == []
         assert client.calls == 2
@@ -69,9 +69,9 @@ class TestFetchNews:
             return client
 
         sleep = asyncio.sleep
-        monkeypatch.setattr("src.news_pipeline.fetch_news.secrets", lambda: SimpleNamespace(marketaux_api_key="test"))
-        monkeypatch.setattr("src.news_pipeline.fetch_news.http_client", fake_http_client)
-        monkeypatch.setattr("src.news_pipeline.fetch_news.asyncio.sleep", lambda _: sleep(0))
+        monkeypatch.setattr("src.news_collector.fetch_news.secrets", lambda: SimpleNamespace(marketaux_api_key="test"))
+        monkeypatch.setattr("src.news_collector.fetch_news.http_client", fake_http_client)
+        monkeypatch.setattr("src.news_collector.fetch_news.asyncio.sleep", lambda _: sleep(0))
 
         with caplog.at_level("WARNING"):
             assert await fetch_news("BTC") == []
@@ -87,7 +87,7 @@ class TestExtractFullTexts:
                 raise RuntimeError("unexpected extraction failure")
             return "extracted article text"
 
-        monkeypatch.setattr("src.news_pipeline.extract._fetch_and_extract", fail_for_one)
+        monkeypatch.setattr("src.news_collector.extract._fetch_and_extract", fail_for_one)
 
         results = await extract_full_texts([{"url": "bad"}, {"url": "good"}])
 

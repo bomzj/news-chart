@@ -1,7 +1,7 @@
 [project]
 name = "news-chart-backend"
 version = "0.1.0"
-description = "Crypto news analysis pipeline with AI sentiment scoring and price tracking"
+description = "Crypto news collector with AI sentiment scoring and price tracking"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115.0",

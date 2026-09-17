@@ -11,10 +11,10 @@ CONDENSE_SYSTEM_PROMPT = """You are a news condensation assistant. Summarize the
 
 async def condense_texts(texts: list[str]) -> list[str]:
     """
-    Condense texts exceeding max_full_text_chars via nano LLM.
+    Condense texts exceeding max_full_text_chars via the Lite model.
     Short texts pass through unchanged.
     """
-    limit = app_config().pipeline.max_full_text_chars
+    limit = app_config().collector.max_full_text_chars
 
     async def _maybe_condense(text: str) -> str:
         if len(text) <= limit:
@@ -25,7 +25,7 @@ async def condense_texts(texts: list[str]) -> list[str]:
 
 
 async def _condense_single(text: str, limit: int) -> str:
-    """Call nano LLM to summarize a single oversized article."""
+    """Call the Lite model to summarize a single oversized article."""
     cfg = app_config().agents
 
     user_prompt = (
@@ -35,7 +35,7 @@ async def _condense_single(text: str, limit: int) -> str:
     try:
         client = azure_ai_client(cfg.api_version)
         response = await client.responses.create(
-            model=cfg.nano_deployment,
+            model=cfg.lite_model,
             input=[
                 {"role": "system", "content": CONDENSE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},

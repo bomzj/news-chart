@@ -1,7 +1,7 @@
 # News Chart
 
 Maps news events to price candlesticks to display market-response correlation.
-Crypto news analysis pipeline that ingests news, deduplicates via semantic vectors, analyzes sentiment with AI agents, snapshots price, and tracks realized price movements over time.
+Crypto news collector that ingests news, deduplicates via semantic vectors, analyzes sentiment with AI agents, snapshots price, and tracks realized price movements over time.
 **NOTE:** This MVP is 100% vibe-coded and support BTC only.
 
 ## What It Does
@@ -9,9 +9,9 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 1. **Ingests news** from MarketAux API for configured crypto tickers (e.g. BTC)
 2. **Deduplicates** using cosine similarity on embeddings — both within the current batch and against the last 24h in the vector DB
 3. **Analyzes & filters** via a LangGraph `StateGraph` (conditional routing):
-   - Junior analyst (GPT-5 Nano) evaluates each news item in parallel
+   - Junior analyst uses the Lite model to evaluate each news item in parallel
    - Analyst labels each item `noise`, `bullish`, `bearish`, or `uncertain`
-   - Junior `uncertain` results route to Senior analyst (GPT-5 Mini)
+   - Junior `uncertain` results route to Senior analyst using the Smart model
    - Noise and unresolved uncertainty are **discarded** (never stored) — only directional signals are kept
 4. **Snapshots price** from Binance perpetual futures at ingestion time
 5. **Stores enriched vectors** in Qdrant Cloud with full metadata
@@ -26,7 +26,7 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 | Agent Orchestration | LangGraph |
 | Observability | Langfuse |
 | Vector Database | Qdrant Cloud |
-| LLM Provider | Azure AI (GPT-5 Nano / Mini) |
+| LLM Provider | Azure AI (Lite / Smart deployment aliases) |
 | Embeddings | Azure AI text-embedding-3-large (256 dims) |
 | Price Data | Binance USDⓈ-M Futures API with Spot API fallback |
 | News Source | MarketAux API |
@@ -44,7 +44,8 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 │                                                                 │
 │  ┌──────────────┐     ┌──────────────┐                         │
 │  │ Cron: 15 min │────▶│ POST         │                         │
-│  │ read-news    │     │ /api/read-news│                         │
+│  │ collect-news │     │ /api/collect- │                         │
+│  │              │     │ news          │                         │
 │  └──────────────┘     └──────┬───────┘                         │
 │                              │                                  │
 │  ┌──────────────┐     ┌──────┴────────┐                        │
@@ -55,7 +56,7 @@ Crypto news analysis pipeline that ingests news, deduplicates via semantic vecto
 │         ┌────────────────────┼────────────────────┐            │
 │         │            FastAPI App                   │            │
 │         │                                         │            │
-│         │  news_pipeline/    │   price_updater/   │            │
+│         │  news_collector/   │   price_updater/   │            │
 │         │  ┌─────────────┐   │   ┌─────────────┐  │            │
 │         │  │ fetch_news  │   │   │ updater     │  │            │
 │         │  │ dedup       │   │   │ (delta calc)│  │            │
@@ -96,15 +97,16 @@ an IP ban), it falls back to the equivalent public Spot ticker or kline
 endpoint. Fallback prices are Spot last-trade/close prices rather than Futures
 mark prices, but keep ingestion and price backfills running.
 
-## Pipeline Flows
+## Collector Flows
 
-### `/api/read-news` (every 15 minutes)
+### `/api/collect-news` (every 15 minutes)
 
-If a previous background pipeline run is still active, a new trigger is
-skipped and returns `202 {"status":"already_running"}`.
+If a previous background collector run is still active, a new trigger is
+skipped and returns `202 {"status":"already_running"}`. The legacy
+`/api/read-news` route remains available as a compatibility alias.
 
 Transient MarketAux request failures are retried once. If the request still
-fails, that ticker is skipped and the background pipeline continues.
+fails, that ticker is skipped and the background collector continues.
 
 ```
 MarketAux API ──▶ Raw news articles (filtered by ticker)
@@ -113,10 +115,10 @@ MarketAux API ──▶ Raw news articles (filtered by ticker)
 Extract full text from article URLs (trafilatura)
        │
        ▼
-Skip articles with unavailable URLs (403, 404, timeout → dropped from pipeline)
+Skip articles with unavailable URLs (403, 404, timeout → dropped from collector)
        │
        ▼
-Condense oversized articles (>2000 chars) via GPT-5 Nano summarization
+Condense oversized articles (>2000 chars) via the Lite model
        │
        ▼
 Embed all articles (Azure AI batch) ──▶ 256-dim vectors
@@ -140,11 +142,11 @@ Attach similar past news as context (with realized price data)
        ▼
 LangGraph StateGraph (graph.py):
   ┌─────────────────────────────────────────────────────────┐
-  │ START → junior_analyst (GPT-5 Nano)                     │
+  │ START → junior_analyst (Lite model)                    │
   │           │                                             │
   │           ├── noise → END (news dropped)                │
   │           ├── bullish/bearish → END (result kept)       │
-  │           └── uncertain → senior_analyst (GPT-5 Mini)   │
+  │           └── uncertain → senior_analyst (Smart model)  │
   │                              ├── bullish/bearish → keep │
   │                              └── noise/uncertain → drop │
   └─────────────────────────────────────────────────────────┘
@@ -164,15 +166,17 @@ retrieval observations, and explicit `duplicate-check` observations.
 
 Each analyzed news item also creates an `analyze-news` parent chain. The
 Langfuse Azure OpenAI wrapper records each `classify-news` generation, including
-the model, prompt, response, latency, token usage, and errors. The parent
-output records the Junior label, final label, whether escalation occurred, and
-whether the item was stored or discarded.
+the concrete Azure deployment model, prompt, response, latency, token usage,
+and errors. Lite and Smart are internal aliases only; Langfuse continues to
+record the configured concrete IDs (`gpt-5.4-nano` or `gpt-5.4-mini`). The
+parent output records the Junior label, final label, whether escalation
+occurred, and whether the item was stored or discarded.
 
 The analyst label is a classification, not a probability. No numerical
 confidence score or evaluator score is recorded. Human labels can be added
 later for calibration and quality evaluation.
 
-The pipeline records duplicate checks for later threshold and embedding
+The collector records duplicate checks for later threshold and embedding
 evaluation without changing the production deduplication decision. Qdrant audit
 queries use the top-1 result with no payload filter and no score threshold; the
 existing 24-hour filtered query remains responsible for deduplication and
@@ -283,8 +287,8 @@ dedup:
   lookback_hours: 168       # how far back to check for duplicates (one week)
 
 agents:
-  nano_deployment: gpt-5.4-nano
-  mini_deployment: gpt-5.4-mini
+  lite_model: gpt-5.4-nano    # Lite model
+  smart_model: gpt-5.4-mini  # Smart model
   api_version: "2025-04-01-preview"
   reasoning_effort: high
 
@@ -293,7 +297,7 @@ embeddings:
   dimensions: 256
   api_version: "2023-05-15"
 
-pipeline:
+collector:
   fetch_news_interval_minutes: 10
   max_full_text_chars: 2000    # articles longer than this get LLM-summarized
 
@@ -317,11 +321,11 @@ LANGFUSE_TRACING_ENABLED=true
 ```
 
 Langfuse tracing is optional and disables itself when its API keys are not
-configured. Each `/api/read-news` execution records deduplication observations
-and analyst classification traces. The standard Azure OpenAI client remains
-the fallback when tracing is disabled; the Langfuse OpenAI wrapper is opted
-into for analyst generations, deduplication embeddings, and the dedup
-evaluation command.
+configured. Each `/api/collect-news` execution records deduplication
+observations and analyst classification traces; `/api/read-news` remains a
+compatibility alias. The standard Azure OpenAI client remains the fallback
+when tracing is disabled; the Langfuse OpenAI wrapper is opted into for analyst
+generations, deduplication embeddings, and the dedup evaluation command.
 
 ## Evals
 
@@ -409,7 +413,9 @@ cp .env.example .env
 # Run the API server
 uv run start
 
-# Trigger pipelines manually
+# Trigger the news collector manually
+curl -X POST http://localhost:8000/api/collect-news
+# The legacy trigger remains available during the rename
 curl -X POST http://localhost:8000/api/read-news
 curl -X POST http://localhost:8000/api/update-prices
 
@@ -501,9 +507,9 @@ npm run build
 
 
 The `render.yaml` at the repo root defines:
-- **Web service**: FastAPI app serving pipeline + chart API endpoints
+- **Web service**: FastAPI app serving collector + chart API endpoints
 - **Static site**: Next.js frontend (static export to `out/`)
-- **Cron job (15 min)**: hits `/api/read-news`
+- **Cron job (15 min)**: hits `/api/collect-news`
 - **Cron job (10 min)**: sends `GET /api/heartbeat` to keep the backend awake
 - **Price backfill cron**: sends `POST /api/update-prices` on the desired backfill schedule
 

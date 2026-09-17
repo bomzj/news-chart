@@ -13,8 +13,8 @@ class DedupConfig(BaseModel):
 
 
 class AgentsConfig(BaseModel):
-    nano_deployment: str = "gpt-5.4-nano"
-    mini_deployment: str = "gpt-5.4-mini"
+    lite_model: str = "gpt-5.4-nano"
+    smart_model: str = "gpt-5.4-mini"
     api_version: str = "2025-04-01-preview"
     reasoning_effort: str = "high"
 
@@ -25,7 +25,7 @@ class EmbeddingsConfig(BaseModel):
     api_version: str = "2023-05-15"
 
 
-class PipelineConfig(BaseModel):
+class CollectorConfig(BaseModel):
     fetch_news_interval_minutes: int = 15 # not used
     max_full_text_chars: int = 2000
 
@@ -42,7 +42,7 @@ class AppConfig(BaseModel):
     dedup: DedupConfig = DedupConfig()
     agents: AgentsConfig = AgentsConfig()
     embeddings: EmbeddingsConfig = EmbeddingsConfig()
-    pipeline: PipelineConfig = PipelineConfig()
+    collector: CollectorConfig = CollectorConfig()
     price_updater: PriceUpdaterConfig = PriceUpdaterConfig()
 
 

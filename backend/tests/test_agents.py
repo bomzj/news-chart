@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, patch
 from datetime import datetime, timezone
 
 from src.shared.types import RawNews
-from src.news_pipeline.models import AnalysisInput, AnalysisOutput, analyst_result_adapter
-from src.news_pipeline.agents import _call_llm, analyze_single
+from src.news_collector.models import AnalysisInput, AnalysisOutput, analyst_result_adapter
+from src.news_collector.agents import _call_llm, analyze_single
 
 
 class _Observation:
@@ -53,7 +53,7 @@ def _result(payload: dict):
 
 @pytest.mark.asyncio
 class TestAgentRouting:
-    @patch("src.news_pipeline.graph._call_llm")
+    @patch("src.news_collector.graph._call_llm")
     async def test_signal_stays_junior(self, mock_llm):
         """A definitive Junior label is returned directly."""
         mock_llm.return_value = _result({
@@ -69,7 +69,7 @@ class TestAgentRouting:
         assert result.sentiment == "bullish"
         assert mock_llm.call_count == 1
 
-    @patch("src.news_pipeline.graph._call_llm")
+    @patch("src.news_collector.graph._call_llm")
     async def test_uncertain_escalates_to_senior(self, mock_llm):
         """Junior uncertainty escalates to Senior via LangGraph routing."""
         mock_llm.side_effect = [
@@ -90,7 +90,7 @@ class TestAgentRouting:
         assert result.sentiment == "bearish"
         assert mock_llm.call_count == 2
 
-    @patch("src.news_pipeline.graph._call_llm")
+    @patch("src.news_collector.graph._call_llm")
     async def test_output_schema_valid(self, mock_llm):
         """Output conforms to AnalysisOutput schema."""
         mock_llm.return_value = _result({
@@ -106,7 +106,7 @@ class TestAgentRouting:
         assert 1 <= result.impact <= 3
         assert len(result.news_summary) <= 400
 
-    @patch("src.news_pipeline.graph._call_llm")
+    @patch("src.news_collector.graph._call_llm")
     async def test_summary_truncated_to_400_chars(self, mock_llm):
         """Summary longer than 400 chars gets truncated."""
         mock_llm.return_value = _result({
@@ -119,7 +119,7 @@ class TestAgentRouting:
         assert result is not None
         assert len(result.news_summary) <= 400
 
-    @patch("src.news_pipeline.graph._call_llm")
+    @patch("src.news_collector.graph._call_llm")
     async def test_noise_returns_none(self, mock_llm):
         """LLM returning noise results in None."""
         mock_llm.return_value = _result({"label": "noise"})
@@ -129,7 +129,7 @@ class TestAgentRouting:
         assert result is None
         assert mock_llm.call_count == 1
 
-    @patch("src.news_pipeline.graph._call_llm")
+    @patch("src.news_collector.graph._call_llm")
     async def test_senior_noise_returns_none(self, mock_llm):
         """If Junior is uncertain and Senior returns noise, the result is discarded."""
         mock_llm.side_effect = [
@@ -144,7 +144,7 @@ class TestAgentRouting:
         assert result is None
         assert mock_llm.call_count == 2
 
-    @patch("src.news_pipeline.graph._call_llm")
+    @patch("src.news_collector.graph._call_llm")
     async def test_senior_uncertain_returns_none(self, mock_llm):
         """If Senior remains uncertain, the result is discarded."""
         mock_llm.side_effect = [
@@ -157,11 +157,11 @@ class TestAgentRouting:
         assert result is None
         assert mock_llm.call_count == 2
 
-    @patch("src.news_pipeline.graph._call_llm")
+    @patch("src.news_collector.graph._call_llm")
     async def test_analysis_trace_records_disposition(self, mock_llm, monkeypatch):
         """The parent Langfuse observation records labels and final disposition."""
         langfuse = _LangfuseStub()
-        monkeypatch.setattr("src.news_pipeline.agents.langfuse_client", lambda: langfuse)
+        monkeypatch.setattr("src.news_collector.agents.langfuse_client", lambda: langfuse)
         mock_llm.return_value = _result({
             "label": "bearish",
             "news_summary": "Exchange withdrawals are frozen",
@@ -195,19 +195,20 @@ async def test_call_llm_uses_observed_client_and_validates_label(monkeypatch):
     )
     client = SimpleNamespace(responses=SimpleNamespace(create=create))
     client_factory = patch(
-        "src.news_pipeline.agents.azure_ai_client",
+        "src.news_collector.agents.azure_ai_client",
         return_value=client,
     )
 
     with client_factory as factory:
         monkeypatch.setattr(
-            "src.news_pipeline.agents.langfuse_tracing_enabled",
+            "src.news_collector.agents.langfuse_tracing_enabled",
             lambda: True,
         )
         result = await _call_llm("gpt-5.4-nano", "article text", stage="junior")
 
     assert result.label == "bullish"
     factory.assert_called_once_with("2025-04-01-preview", observe=True)
+    assert create.await_args.kwargs["model"] == "gpt-5.4-nano"
     assert create.await_args.kwargs["name"] == "classify-news"
     assert create.await_args.kwargs["metadata"] == {"analyst_stage": "junior"}
 
@@ -221,13 +222,13 @@ async def test_call_llm_omits_langfuse_options_when_tracing_is_disabled(monkeypa
     )
     client = SimpleNamespace(responses=SimpleNamespace(create=create))
     client_factory = patch(
-        "src.news_pipeline.agents.azure_ai_client",
+        "src.news_collector.agents.azure_ai_client",
         return_value=client,
     )
 
     with client_factory as factory:
         monkeypatch.setattr(
-            "src.news_pipeline.agents.langfuse_tracing_enabled",
+            "src.news_collector.agents.langfuse_tracing_enabled",
             lambda: False,
         )
         result = await _call_llm("gpt-5.4-nano", "article text", stage="junior")
@@ -241,7 +242,7 @@ async def test_call_llm_omits_langfuse_options_when_tracing_is_disabled(monkeypa
 class TestGraphCompilation:
     def test_graph_compiles_and_has_expected_nodes(self):
         """The LangGraph analyst graph compiles with correct node structure."""
-        from src.news_pipeline.graph import analysis_graph
+        from src.news_collector.graph import analysis_graph
 
         graph_nodes = analysis_graph.get_graph().nodes
         node_ids = set(graph_nodes.keys())

@@ -11,16 +11,16 @@ from src.shared.embeddings import embed_texts
 from src.shared.observability import langfuse_client
 from src.shared.qdrant import ensure_collection
 from src.shared.types import NewsRecord
-from src.news_pipeline.fetch_news import fetch_news
-from src.news_pipeline.dedup import deduplicate
-from src.news_pipeline.agents import analyze_batch
-from src.news_pipeline.models import AnalysisInput
-from src.news_pipeline.store import store_news_batch
+from src.news_collector.fetch_news import fetch_news
+from src.news_collector.dedup import deduplicate
+from src.news_collector.agents import analyze_batch
+from src.news_collector.models import AnalysisInput
+from src.news_collector.store import store_news_batch
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 _background_tasks: set[asyncio.Task[None]] = set()
-news_pipeline_lock = asyncio.Lock()
+news_collector_lock = asyncio.Lock()
 
 
 async def _process_ticker(ticker: str) -> tuple[int, int]:
@@ -95,8 +95,8 @@ async def _process_ticker(ticker: str) -> tuple[int, int]:
     return len(records), discarded_count
 
 
-async def _run_pipeline():
-    """Execute the full news pipeline in the background."""
+async def _run_collector():
+    """Execute the full news collector in the background."""
     cfg = app_config()
     await ensure_collection()
 
@@ -105,46 +105,47 @@ async def _run_pipeline():
     discarded_count = sum(discarded for _, discarded in results)
 
     logger.info(
-        "Pipeline finished: processed=%d discarded=%d tickers=%s",
+        "News collector finished: processed=%d discarded=%d tickers=%s",
         total_processed,
         discarded_count,
         cfg.tickers,
     )
 
 
-def _report_pipeline_task(task: asyncio.Task[None]) -> None:
+def _report_collector_task(task: asyncio.Task[None]) -> None:
     try:
         task.result()
     except asyncio.CancelledError:
-        logger.warning("News pipeline task was cancelled")
+        logger.warning("News collector task was cancelled")
     except Exception:
-        logger.exception("News pipeline failed before completion")
+        logger.exception("News collector failed before completion")
 
 
-def release_news_pipeline_lock(task: asyncio.Task[None]) -> None:
-    if news_pipeline_lock.locked():
-        news_pipeline_lock.release()
+def release_news_collector_lock(task: asyncio.Task[None]) -> None:
+    if news_collector_lock.locked():
+        news_collector_lock.release()
 
 
-@router.post("/api/read-news")
-async def read_news():
+@router.post("/api/read-news", include_in_schema=False)
+@router.post("/api/collect-news")
+async def collect_news():
     """
-    Trigger news pipeline in background, return 202 immediately.
+    Trigger the news collector in the background and return 202 immediately.
     Keeps cron services happy (tiny response, no timeout).
     """
-    if news_pipeline_lock.locked():
-        logger.warning("Skipping news pipeline because another run is still in progress")
+    if news_collector_lock.locked():
+        logger.warning("Skipping news collector because another run is still in progress")
         return JSONResponse(status_code=202, content={"status": "already_running"})
 
-    await news_pipeline_lock.acquire()
+    await news_collector_lock.acquire()
     try:
-        task = asyncio.create_task(_run_pipeline())
+        task = asyncio.create_task(_run_collector())
     except BaseException:
-        news_pipeline_lock.release()
+        news_collector_lock.release()
         raise
 
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
-    task.add_done_callback(release_news_pipeline_lock)
-    task.add_done_callback(_report_pipeline_task)
+    task.add_done_callback(release_news_collector_lock)
+    task.add_done_callback(_report_collector_task)
     return JSONResponse(status_code=202, content={"status": "accepted"})

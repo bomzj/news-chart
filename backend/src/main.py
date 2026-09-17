@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.news_pipeline.router import router as news_router
+from src.news_collector.router import router as news_router
 from src.price_updater.router import router as price_router
 from src.chart.router import router as chart_router
 from src.shared.azure_ai import close_azure_ai_clients
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="News Chart API",
-    description="Crypto news analysis pipeline with AI sentiment scoring and price tracking",
+    description="Crypto news collector with AI sentiment scoring and price tracking",
     version="0.1.0",
 )
 

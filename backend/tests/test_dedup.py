@@ -6,7 +6,7 @@ import pytest
 from datetime import datetime, timezone
 
 from src.shared.types import RawNews
-from src.news_pipeline.dedup import _intra_batch_dedup, _top1_intra_batch, deduplicate
+from src.news_collector.dedup import _intra_batch_dedup, _top1_intra_batch, deduplicate
 
 
 def _make_news(title: str = "Test News", desc: str = "Description") -> RawNews:
@@ -129,10 +129,10 @@ async def test_deduplicate_audits_all_items_and_uses_context_threshold(monkeypat
     langfuse = _LangfuseStub()
 
     embed_texts = AsyncMock(return_value=embeddings)
-    monkeypatch.setattr("src.news_pipeline.dedup.embed_texts", embed_texts)
-    monkeypatch.setattr("src.news_pipeline.dedup.search_top1_batch", search_top1)
-    monkeypatch.setattr("src.news_pipeline.dedup.search_similar", search_similar)
-    monkeypatch.setattr("src.news_pipeline.dedup.langfuse_client", lambda: langfuse)
+    monkeypatch.setattr("src.news_collector.dedup.embed_texts", embed_texts)
+    monkeypatch.setattr("src.news_collector.dedup.search_top1_batch", search_top1)
+    monkeypatch.setattr("src.news_collector.dedup.search_similar", search_similar)
+    monkeypatch.setattr("src.news_collector.dedup.langfuse_client", lambda: langfuse)
 
     result = await deduplicate(news)
 

@@ -66,7 +66,7 @@ async def _fetch_and_extract(url: str) -> str | None:
         response = await client.get(
             url,
             timeout=_FETCH_TIMEOUT,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; NewsPipeline/1.0)"},
+            headers={"User-Agent": "Mozilla/5.0 (compatible; NewsCollector/1.0)"},
         )
         response.raise_for_status()
         html = response.text
