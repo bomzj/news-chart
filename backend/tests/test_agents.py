@@ -207,7 +207,7 @@ async def test_call_llm_uses_observed_client_and_validates_label(monkeypatch):
         result = await _call_llm("gpt-5.4-nano", "article text", stage="junior")
 
     assert result.label == "bullish"
-    factory.assert_called_once_with("2025-04-01-preview", observe=True)
+    factory.assert_called_once_with(observe=True)
     assert create.await_args.kwargs["model"] == "gpt-5.4-nano"
     assert create.await_args.kwargs["reasoning"] == {"effort": "high"}
     assert create.await_args.kwargs["name"] == "classify-news"
@@ -222,7 +222,7 @@ async def test_call_llm_uses_smart_reasoning_effort(monkeypatch):
     client = SimpleNamespace(responses=SimpleNamespace(create=create))
     monkeypatch.setattr(
         "src.news_collector.agents.azure_ai_client",
-        lambda api_version, observe=False: client,
+        lambda *, observe=False: client,
     )
     monkeypatch.setattr(
         "src.news_collector.agents.langfuse_tracing_enabled",
@@ -257,7 +257,7 @@ async def test_call_llm_omits_langfuse_options_when_tracing_is_disabled(monkeypa
         result = await _call_llm("gpt-5.4-nano", "article text", stage="junior")
 
     assert result.label == "noise"
-    factory.assert_called_once_with("2025-04-01-preview", observe=True)
+    factory.assert_called_once_with(observe=True)
     assert "name" not in create.await_args.kwargs
     assert "metadata" not in create.await_args.kwargs
 

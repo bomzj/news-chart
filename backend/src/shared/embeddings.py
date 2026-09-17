@@ -38,7 +38,7 @@ async def embed_texts(
     if dimensions_used <= 0:
         raise ValueError("Embedding dimensions must be positive")
 
-    client = azure_ai_client(cfg.api_version, observe=observe)
+    client = azure_ai_client(observe=observe)
     if observe:
         response = await client.embeddings.create(
             model=cfg.model,

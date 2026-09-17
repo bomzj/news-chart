@@ -114,7 +114,7 @@ async def _call_llm(
         case _:
             raise ValueError(f"Unsupported analyst stage: {stage}")
 
-    client = azure_ai_client(cfg.api_version, observe=True)
+    client = azure_ai_client(observe=True)
     tracing_options = {}
     if langfuse_tracing_enabled():
         tracing_options = {

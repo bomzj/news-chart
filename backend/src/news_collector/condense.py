@@ -33,7 +33,7 @@ async def _condense_single(text: str, limit: int) -> str:
     )
 
     try:
-        client = azure_ai_client(cfg.api_version)
+        client = azure_ai_client()
         response = await client.responses.create(
             model=cfg.lite_model,
             input=[

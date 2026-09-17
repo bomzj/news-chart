@@ -11,12 +11,10 @@ agents:
   lite_reasoning_effort: high
   smart_model: gpt-5.6-luna
   smart_reasoning_effort: max
-  api_version: "2025-04-01-preview"
 
 embeddings:
   model: text-embedding-3-large
   dimensions: 256
-  api_version: "2023-05-15"
 
 collector:
   fetch_news_interval_minutes: 10 # not used, since the collector is triggered by a cron job

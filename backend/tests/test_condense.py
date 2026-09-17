@@ -18,6 +18,6 @@ async def test_condense_uses_lite_reasoning_effort():
         result = await _condense_single("long article text", 5)
 
     assert result == "short"
-    client_factory.assert_called_once_with("2025-04-01-preview")
+    client_factory.assert_called_once_with()
     assert create.await_args.kwargs["model"] == "gpt-5.4-nano"
     assert create.await_args.kwargs["reasoning"] == {"effort": "high"}

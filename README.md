@@ -291,12 +291,10 @@ agents:
   lite_reasoning_effort: high
   smart_model: gpt-5.4-mini  # Smart model
   smart_reasoning_effort: max
-  api_version: "2025-04-01-preview"
 
 embeddings:
   model: text-embedding-3-large
   dimensions: 256
-  api_version: "2023-05-15"
 
 collector:
   fetch_news_interval_minutes: 10
@@ -312,7 +310,7 @@ price_updater:
 MARKETAUX_API_KEY=...
 QDRANT_URL=https://your-cluster.cloud.qdrant.io
 QDRANT_API_KEY=...
-AZURE_AI_ENDPOINT=https://your-resource.cognitiveservices.azure.com
+AZURE_AI_ENDPOINT=https://your-resource.cognitiveservices.azure.com/openai/v1/
 AZURE_AI_API_KEY=...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_PUBLIC_KEY=pk-lf-...
@@ -321,12 +319,17 @@ LANGFUSE_TRACING_ENVIRONMENT=development
 LANGFUSE_TRACING_ENABLED=true
 ```
 
+`AZURE_AI_ENDPOINT` must be the Azure OpenAI v1 base URL, including the
+`/openai/v1/` path. The backend passes it to the OpenAI-compatible async
+client as `base_url`; no dated API version is configured.
+
 Langfuse tracing is optional and disables itself when its API keys are not
 configured. Each `/api/collect-news` execution records deduplication
 observations and analyst classification traces; `/api/read-news` remains a
-compatibility alias. The standard Azure OpenAI client remains the fallback
-when tracing is disabled; the Langfuse OpenAI wrapper is opted into for analyst
-generations, deduplication embeddings, and the dedup evaluation command.
+compatibility alias. The standard OpenAI-compatible client remains the
+fallback when tracing is disabled; the Langfuse OpenAI wrapper is opted into
+for analyst generations, deduplication embeddings, and the dedup evaluation
+command.
 
 ## Evals
 
@@ -515,7 +518,7 @@ The `render.yaml` at the repo root defines:
 - **Price backfill cron**: sends `POST /api/update-prices` on the desired backfill schedule
 
 Set all environment variables in the Render dashboard:
-- Backend: `MARKETAUX_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`
+- Backend: `MARKETAUX_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `AZURE_AI_ENDPOINT` (including `/openai/v1/`), `AZURE_AI_API_KEY`
 - Optional Langfuse tracing: `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
   `LANGFUSE_BASE_URL`, `LANGFUSE_TRACING_ENVIRONMENT`, and
   `LANGFUSE_TRACING_ENABLED`

@@ -15,29 +15,37 @@ def test_azure_ai_client_defaults_to_standard_and_opts_into_langfuse(monkeypatch
     observed_factory = Mock(return_value=observed_client)
     langfuse_factory = Mock()
 
-    monkeypatch.setattr(azure_ai, "AsyncAzureOpenAI", standard_factory)
-    monkeypatch.setattr(azure_ai, "LangfuseAsyncAzureOpenAI", observed_factory)
+    monkeypatch.setattr(azure_ai, "AsyncOpenAI", standard_factory)
+    monkeypatch.setattr(azure_ai, "LangfuseAsyncOpenAI", observed_factory)
     monkeypatch.setattr(azure_ai, "langfuse_client", langfuse_factory)
     monkeypatch.setattr(azure_ai, "langfuse_tracing_enabled", lambda: True)
     monkeypatch.setattr(
         azure_ai,
         "secrets",
         lambda: SimpleNamespace(
-            azure_ai_endpoint="https://example.test",
+            azure_ai_endpoint="https://example.test/openai/v1",
             azure_ai_api_key="test-key",
         ),
     )
 
     try:
-        standard = azure_ai.azure_ai_client("2025-04-01-preview")
-        observed = azure_ai.azure_ai_client("2025-04-01-preview", observe=True)
+        standard = azure_ai.azure_ai_client()
+        observed = azure_ai.azure_ai_client(observe=True)
 
         assert standard is standard_client
         assert observed is observed_client
-        assert azure_ai.azure_ai_client("2025-04-01-preview") is standard_client
-        assert azure_ai.azure_ai_client("2025-04-01-preview", observe=True) is observed_client
-        standard_factory.assert_called_once()
-        observed_factory.assert_called_once()
+        assert azure_ai.azure_ai_client() is standard_client
+        assert azure_ai.azure_ai_client(observe=True) is observed_client
+        standard_factory.assert_called_once_with(
+            api_key="test-key",
+            base_url="https://example.test/openai/v1/",
+            max_retries=0,
+        )
+        observed_factory.assert_called_once_with(
+            api_key="test-key",
+            base_url="https://example.test/openai/v1/",
+            max_retries=0,
+        )
         langfuse_factory.assert_called_once_with()
     finally:
         azure_ai._clients.clear()
@@ -51,21 +59,21 @@ def test_azure_ai_client_skips_langfuse_when_tracing_is_disabled(monkeypatch):
     observed_factory = Mock(return_value=observed_client)
     langfuse_factory = Mock()
 
-    monkeypatch.setattr(azure_ai, "AsyncAzureOpenAI", standard_factory)
-    monkeypatch.setattr(azure_ai, "LangfuseAsyncAzureOpenAI", observed_factory)
+    monkeypatch.setattr(azure_ai, "AsyncOpenAI", standard_factory)
+    monkeypatch.setattr(azure_ai, "LangfuseAsyncOpenAI", observed_factory)
     monkeypatch.setattr(azure_ai, "langfuse_client", langfuse_factory)
     monkeypatch.setattr(azure_ai, "langfuse_tracing_enabled", lambda: False)
     monkeypatch.setattr(
         azure_ai,
         "secrets",
         lambda: SimpleNamespace(
-            azure_ai_endpoint="https://example.test",
+            azure_ai_endpoint="https://example.test/openai/v1/",
             azure_ai_api_key="test-key",
         ),
     )
 
     try:
-        client = azure_ai.azure_ai_client("2025-04-01-preview", observe=True)
+        client = azure_ai.azure_ai_client(observe=True)
 
         assert client is standard_client
         standard_factory.assert_called_once()
@@ -75,13 +83,27 @@ def test_azure_ai_client_skips_langfuse_when_tracing_is_disabled(monkeypatch):
         azure_ai._clients.clear()
 
 
+def test_azure_ai_client_requires_v1_endpoint(monkeypatch):
+    azure_ai._clients.clear()
+    monkeypatch.setattr(
+        azure_ai,
+        "secrets",
+        lambda: SimpleNamespace(
+            azure_ai_endpoint="https://example.test",
+            azure_ai_api_key="test-key",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="openai/v1"):
+        azure_ai.azure_ai_client()
+
+
 @pytest.mark.asyncio
 async def test_embed_texts_only_adds_langfuse_options_when_observing(monkeypatch):
     cfg = SimpleNamespace(
         embeddings=SimpleNamespace(
             model="text-embedding-3-large",
             dimensions=256,
-            api_version="2023-05-15",
         )
     )
     create = AsyncMock(
