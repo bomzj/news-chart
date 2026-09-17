@@ -1,7 +1,7 @@
 import asyncio
 from typing import Literal
 
-from src.config import app_config
+from src.config import ReasoningEffort
 from src.news_collector.models import (
     AnalystBearish,
     AnalystBullish,
@@ -98,22 +98,14 @@ def _build_user_prompt(input: AnalysisInput) -> str:
     return "\n".join(parts)
 
 
-async def _call_llm(
+async def call_llm(
     model: str,
     user_prompt: str,
     *,
+    reasoning_effort: ReasoningEffort,
     stage: Literal["junior", "senior"],
 ) -> AnalystResult:
     """Call Azure AI via the Responses API and parse JSON response."""
-    cfg = app_config().agents
-    match stage:
-        case "junior":
-            effort = cfg.lite_reasoning_effort
-        case "senior":
-            effort = cfg.smart_reasoning_effort
-        case _:
-            raise ValueError(f"Unsupported analyst stage: {stage}")
-
     client = azure_ai_client(observe=True)
     tracing_options = {}
     if langfuse_tracing_enabled():
@@ -128,7 +120,7 @@ async def _call_llm(
             {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        reasoning={"effort": effort},
+        reasoning={"effort": reasoning_effort},
         text={"format": {"type": "json_object"}},
         timeout=120.0,
         **tracing_options,
@@ -164,7 +156,7 @@ def analysis_trace_input(input: AnalysisInput) -> dict:
 async def analyze_single(input: AnalysisInput) -> AnalysisOutput | None:
     """
     Run the LangGraph analyst graph for a single news item.
-    Junior analyst first, escalating uncertain results to Senior.
+    Run Junior analysis first, escalating uncertain results to Senior.
     Returns None if the final result is noise or uncertain.
     """
     from src.news_collector.graph import analysis_graph

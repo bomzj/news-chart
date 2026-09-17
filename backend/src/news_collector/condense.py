@@ -11,7 +11,7 @@ CONDENSE_SYSTEM_PROMPT = """You are a news condensation assistant. Summarize the
 
 async def condense_texts(texts: list[str]) -> list[str]:
     """
-    Condense texts exceeding max_full_text_chars via the Lite model.
+    Condense texts exceeding max_full_text_chars via the configured LLM.
     Short texts pass through unchanged.
     """
     limit = app_config().collector.max_full_text_chars
@@ -25,8 +25,8 @@ async def condense_texts(texts: list[str]) -> list[str]:
 
 
 async def _condense_single(text: str, limit: int) -> str:
-    """Call the Lite model to summarize a single oversized article."""
-    cfg = app_config().agents
+    """Call the configured LLM to summarize a single oversized article."""
+    cfg = app_config().llm
 
     user_prompt = (
         f"Condense this article to under {limit} characters while keeping all important facts:\n\n{text}"
@@ -35,12 +35,12 @@ async def _condense_single(text: str, limit: int) -> str:
     try:
         client = azure_ai_client()
         response = await client.responses.create(
-            model=cfg.lite_model,
+            model=cfg.name,
             input=[
                 {"role": "system", "content": CONDENSE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            reasoning={"effort": cfg.lite_reasoning_effort},
+            reasoning={"effort": cfg.reasoning_effort.condense},
             name="condense-article",
             metadata={"max_output_chars": limit},
             timeout=60.0,

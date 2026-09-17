@@ -9,9 +9,9 @@ Crypto news collector that ingests news, deduplicates via semantic vectors, anal
 1. **Ingests news** from MarketAux API for configured crypto tickers (e.g. BTC)
 2. **Deduplicates** using cosine similarity on embeddings — both within the current batch and against the last 24h in the vector DB
 3. **Analyzes & filters** via a LangGraph `StateGraph` (conditional routing):
-   - Junior analyst uses the Lite model to evaluate each news item in parallel
+   - Junior analyst uses the configured LLM with high reasoning effort to evaluate each news item in parallel
    - Analyst labels each item `noise`, `bullish`, `bearish`, or `uncertain`
-   - Junior `uncertain` results route to Senior analyst using the Smart model
+   - Junior `uncertain` results route to Senior analyst using the same LLM with the default max reasoning effort
    - Noise and unresolved uncertainty are **discarded** (never stored) — only directional signals are kept
 4. **Snapshots price** from Binance perpetual futures at ingestion time
 5. **Stores enriched vectors** in Qdrant Cloud with full metadata
@@ -26,7 +26,7 @@ Crypto news collector that ingests news, deduplicates via semantic vectors, anal
 | Agent Orchestration | LangGraph |
 | Observability | Langfuse |
 | Vector Database | Qdrant Cloud |
-| LLM Provider | Azure AI (Lite / Smart deployment aliases) |
+| LLM Provider | Azure AI (`gpt-5.6-luna`) |
 | Embeddings | Azure AI text-embedding-3-large (256 dims) |
 | Price Data | Binance USDⓈ-M Futures API with Spot API fallback |
 | News Source | MarketAux API |
@@ -118,7 +118,7 @@ Extract full text from article URLs (trafilatura)
 Skip articles with unavailable URLs (403, 404, timeout → dropped from collector)
        │
        ▼
-Condense oversized articles (>2000 chars) via the Lite model
+Condense oversized articles (>2000 chars) via the configured LLM with high reasoning effort
        │
        ▼
 Embed all articles (Azure AI batch) ──▶ 256-dim vectors
@@ -142,11 +142,11 @@ Attach similar past news as context (with realized price data)
        ▼
 LangGraph StateGraph (graph.py):
   ┌─────────────────────────────────────────────────────────┐
-  │ START → junior_analyst (Lite model)                    │
+  │ START → junior_analyst (configured LLM, high)           │
   │           │                                             │
   │           ├── noise → END (news dropped)                │
   │           ├── bullish/bearish → END (result kept)       │
-  │           └── uncertain → senior_analyst (Smart model)  │
+  │           └── uncertain → senior_analyst (configured LLM, max) │
   │                              ├── bullish/bearish → keep │
   │                              └── noise/uncertain → drop │
   └─────────────────────────────────────────────────────────┘
@@ -167,10 +167,9 @@ retrieval observations, and explicit `duplicate-check` observations.
 Each analyzed news item also creates an `analyze-news` parent chain. The
 Langfuse Azure OpenAI wrapper records each `classify-news` generation, including
 the concrete Azure deployment model, prompt, response, latency, token usage,
-and errors. Lite and Smart are internal aliases only; Langfuse continues to
-record the configured concrete IDs (`gpt-5-nano` or `gpt-5.6-luna`). The
-parent output records the Junior label, final label, whether escalation
-occurred, and whether the item was stored or discarded.
+and errors. The configured model is `gpt-5.6-luna`. The parent output records
+the Junior label, final label, whether escalation occurred, and whether the
+item was stored or discarded.
 
 The analyst label is a classification, not a probability. No numerical
 confidence score or evaluator score is recorded. Human labels can be added
@@ -249,7 +248,7 @@ so a slow run cannot multiply requests when the scheduler triggers again.
   "news_full_text": "Full article text...",
   "sentiment": "bullish",
   "impact": 3,
-  "predicted_by_model": "gpt-5-nano",
+  "predicted_by_model": "gpt-5.6-luna",
   "price_at_ingestion": 68250.00,
   "realized_price_delta_pct_1h": null,
   "realized_price_delta_pct_24h": null,
@@ -286,11 +285,12 @@ dedup:
   context_similarity_threshold: 0.75  # minimum similarity for agent context
   lookback_hours: 168       # how far back to check for duplicates (one week)
 
-agents:
-  lite_model: gpt-5-nano    # Lite model
-  lite_reasoning_effort: high
-  smart_model: gpt-5.6-luna  # Smart model
-  smart_reasoning_effort: max
+llm:
+  name: gpt-5.6-luna
+  reasoning_effort:
+    default: max
+    condense: high
+    junior_analysis: high
 
 embeddings:
   model: text-embedding-3-large
@@ -477,7 +477,7 @@ Response:
       "sentiment": "bullish",
       "impact": 3,
       "news_summary": "BTC ETF inflows hit record...",
-      "predicted_by_model": "gpt-5-nano",
+      "predicted_by_model": "gpt-5.6-luna",
       "price_at_ingestion": 68250.00
     }
   ],

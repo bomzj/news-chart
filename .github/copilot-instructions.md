@@ -26,7 +26,7 @@
 
 ## 4. Optimization & Performance
 - **Batching is Mandatory:** Always optimize for batched database I/O. Use Qdrant's batch operations for point insertions, semantic vector searches, and crucially, **batch payload/metadata updates** when querying via filters (e.g., matching `published_at` to backfill realized price deltas).
-- **Agent Efficiency:** Ensure LangGraph state transitions and LLM calls (e.g., Lite vs. Smart routing) are optimized for concurrent execution and latency.
+- **Agent Efficiency:** Ensure LangGraph state transitions and LLM calls are optimized for concurrent execution and latency.
 
 ## 5. Testing & Comments
 - **Test Core Logic:** Write unit and integration tests focusing on domain logic and edge cases. Execute via `uv`.

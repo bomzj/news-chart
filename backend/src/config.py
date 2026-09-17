@@ -12,11 +12,18 @@ class DedupConfig(BaseModel):
     lookback_hours: int = 168
 
 
-class AgentsConfig(BaseModel):
-    lite_model: str = "gpt-5-nano"
-    lite_reasoning_effort: str = "high"
-    smart_model: str = "gpt-5.6-luna"
-    smart_reasoning_effort: str = "max"
+ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
+
+
+class ReasoningEffortConfig(BaseModel):
+    default: ReasoningEffort = "max"
+    condense: ReasoningEffort = "high"
+    junior_analysis: ReasoningEffort = "high"
+
+
+class LlmConfig(BaseModel):
+    name: str = "gpt-5.6-luna"
+    reasoning_effort: ReasoningEffortConfig = ReasoningEffortConfig()
 
 
 class EmbeddingsConfig(BaseModel):
@@ -39,7 +46,7 @@ class PriceUpdaterConfig(BaseModel):
 class AppConfig(BaseModel):
     tickers: list[str] = ["BTC"]
     dedup: DedupConfig = DedupConfig()
-    agents: AgentsConfig = AgentsConfig()
+    llm: LlmConfig = LlmConfig()
     embeddings: EmbeddingsConfig = EmbeddingsConfig()
     collector: CollectorConfig = CollectorConfig()
     price_updater: PriceUpdaterConfig = PriceUpdaterConfig()

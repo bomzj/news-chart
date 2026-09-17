@@ -6,11 +6,12 @@ dedup:
   context_similarity_threshold: 0.75
   lookback_hours: 168
 
-agents:
-  lite_model: gpt-5-nano
-  lite_reasoning_effort: high
-  smart_model: gpt-5.6-luna
-  smart_reasoning_effort: max
+llm:
+  name: gpt-5.6-luna
+  reasoning_effort:
+    default: max
+    condense: high
+    junior_analysis: high
 
 embeddings:
   model: text-embedding-3-large

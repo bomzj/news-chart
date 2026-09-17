@@ -9,7 +9,7 @@ from src.news_collector.condense import _condense_single
 
 
 @pytest.mark.asyncio
-async def test_condense_uses_lite_reasoning_effort():
+async def test_condense_uses_condense_reasoning_effort():
     create = AsyncMock(return_value=SimpleNamespace(output_text="short"))
     client = SimpleNamespace(responses=SimpleNamespace(create=create))
 
@@ -21,5 +21,7 @@ async def test_condense_uses_lite_reasoning_effort():
 
     assert result == "short"
     client_factory.assert_called_once_with()
-    assert create.await_args.kwargs["model"] == app_config().agents.lite_model
-    assert create.await_args.kwargs["reasoning"] == {"effort": "high"}
+    assert create.await_args.kwargs["model"] == app_config().llm.name
+    assert create.await_args.kwargs["reasoning"] == {
+        "effort": app_config().llm.reasoning_effort.condense
+    }
