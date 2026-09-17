@@ -7,9 +7,9 @@ dedup:
   lookback_hours: 168
 
 agents:
-  lite_model: gpt-5.4-nano
+  lite_model: gpt-5-nano
   lite_reasoning_effort: high
-  smart_model: gpt-5.4-mini
+  smart_model: gpt-5.6-luna
   smart_reasoning_effort: max
   api_version: "2025-04-01-preview"
 
