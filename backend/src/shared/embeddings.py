@@ -41,7 +41,7 @@ async def embed_texts(
     client = azure_ai_client(cfg.api_version, observe=observe)
     if observe:
         response = await client.embeddings.create(
-            model=cfg.deployment,
+            model=cfg.model,
             input=texts,
             dimensions=dimensions_used,
             name="embed-news",
@@ -50,7 +50,7 @@ async def embed_texts(
         )
     else:
         response = await client.embeddings.create(
-            model=cfg.deployment,
+            model=cfg.model,
             input=texts,
             dimensions=dimensions_used,
             timeout=60.0,

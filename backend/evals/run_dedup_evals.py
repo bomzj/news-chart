@@ -132,7 +132,7 @@ def run_dedup_evals(
         metadata={
             "dataset": dataset,
             "threshold": threshold_used,
-            "embedding_model": embedding_config.deployment,
+            "embedding_model": embedding_config.model,
             "embedding_dimensions": dimensions_used,
         },
     )

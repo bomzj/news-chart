@@ -293,7 +293,7 @@ agents:
   reasoning_effort: high
 
 embeddings:
-  deployment: text-embedding-3-large
+  model: text-embedding-3-large
   dimensions: 256
   api_version: "2023-05-15"
 
@@ -352,7 +352,7 @@ article texts and a human-verified label:
 ```
 
 `expected_output` may also be the boolean `true` or `false`. The evaluation
-embeds both texts with the configured Azure embedding deployment and selected
+embeds both texts with the configured Azure embedding model and selected
 embedding dimensions, calculates their cosine similarity, and predicts
 `duplicate=true` when the score is at least the selected threshold. It emits
 one score per item: `duplicate-correct` (`BOOLEAN`, `1` when the prediction

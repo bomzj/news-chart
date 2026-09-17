@@ -53,7 +53,7 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
             score=float(point.score),
             threshold=threshold,
             stage="qdrant",
-            embedding_model=embedding_cfg.deployment,
+            embedding_model=embedding_cfg.model,
             embedding_dimensions=embedding_cfg.dimensions,
         )
 
@@ -66,7 +66,7 @@ async def deduplicate(news_items: list[RawNews]) -> list[tuple[RawNews, list[dic
             score=score,
             threshold=threshold,
             stage="intra_batch",
-            embedding_model=embedding_cfg.deployment,
+            embedding_model=embedding_cfg.model,
             embedding_dimensions=embedding_cfg.dimensions,
         )
 

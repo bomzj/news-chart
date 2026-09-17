@@ -79,7 +79,7 @@ def test_azure_ai_client_skips_langfuse_when_tracing_is_disabled(monkeypatch):
 async def test_embed_texts_only_adds_langfuse_options_when_observing(monkeypatch):
     cfg = SimpleNamespace(
         embeddings=SimpleNamespace(
-            deployment="text-embedding-3-large",
+            model="text-embedding-3-large",
             dimensions=256,
             api_version="2023-05-15",
         )

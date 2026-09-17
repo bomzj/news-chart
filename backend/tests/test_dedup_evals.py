@@ -44,7 +44,7 @@ def test_run_dedup_evals_records_embedding_dimensions(monkeypatch):
     config = SimpleNamespace(
         dedup=SimpleNamespace(cosine_threshold=0.9),
         embeddings=SimpleNamespace(
-            deployment="text-embedding-3-large",
+            model="text-embedding-3-large",
             dimensions=256,
         ),
     )

@@ -20,7 +20,7 @@ class AgentsConfig(BaseModel):
 
 
 class EmbeddingsConfig(BaseModel):
-    deployment: str = "text-embedding-3-large"
+    model: str = "text-embedding-3-large"
     dimensions: int = 256
     api_version: str = "2023-05-15"
 

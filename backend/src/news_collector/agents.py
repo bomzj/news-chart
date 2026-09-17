@@ -99,7 +99,7 @@ def _build_user_prompt(input: AnalysisInput) -> str:
 
 
 async def _call_llm(
-    deployment: str,
+    model: str,
     user_prompt: str,
     *,
     stage: Literal["junior", "senior"],
@@ -115,7 +115,7 @@ async def _call_llm(
         }
 
     response = await client.responses.create(
-        model=deployment,
+        model=model,
         input=[
             {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
