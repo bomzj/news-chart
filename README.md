@@ -168,7 +168,7 @@ Each analyzed news item also creates an `analyze-news` parent chain. The
 Langfuse Azure OpenAI wrapper records each `classify-news` generation, including
 the concrete Azure deployment model, prompt, response, latency, token usage,
 and errors. Lite and Smart are internal aliases only; Langfuse continues to
-record the configured concrete IDs (`gpt-5.4-nano` or `gpt-5.4-mini`). The
+record the configured concrete IDs (`gpt-5-nano` or `gpt-5.6-luna`). The
 parent output records the Junior label, final label, whether escalation
 occurred, and whether the item was stored or discarded.
 
@@ -249,7 +249,7 @@ so a slow run cannot multiply requests when the scheduler triggers again.
   "news_full_text": "Full article text...",
   "sentiment": "bullish",
   "impact": 3,
-  "predicted_by_model": "gpt-5.4-nano",
+  "predicted_by_model": "gpt-5-nano",
   "price_at_ingestion": 68250.00,
   "realized_price_delta_pct_1h": null,
   "realized_price_delta_pct_24h": null,
@@ -287,9 +287,9 @@ dedup:
   lookback_hours: 168       # how far back to check for duplicates (one week)
 
 agents:
-  lite_model: gpt-5.4-nano    # Lite model
+  lite_model: gpt-5-nano    # Lite model
   lite_reasoning_effort: high
-  smart_model: gpt-5.4-mini  # Smart model
+  smart_model: gpt-5.6-luna  # Smart model
   smart_reasoning_effort: max
 
 embeddings:
@@ -477,7 +477,7 @@ Response:
       "sentiment": "bullish",
       "impact": 3,
       "news_summary": "BTC ETF inflows hit record...",
-      "predicted_by_model": "gpt-5.4-nano",
+      "predicted_by_model": "gpt-5-nano",
       "price_at_ingestion": 68250.00
     }
   ],

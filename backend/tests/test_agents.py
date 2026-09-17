@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from datetime import datetime, timezone
 
+from src.config import app_config
 from src.shared.types import RawNews
 from src.news_collector.models import AnalysisInput, AnalysisOutput, analyst_result_adapter
 from src.news_collector.agents import _call_llm, analyze_single
@@ -65,7 +66,7 @@ class TestAgentRouting:
         result = await analyze_single(_make_input())
 
         assert result is not None
-        assert result.predicted_by_model == "gpt-5.4-nano"
+        assert result.predicted_by_model == app_config().agents.lite_model
         assert result.sentiment == "bullish"
         assert mock_llm.call_count == 1
 
@@ -86,7 +87,7 @@ class TestAgentRouting:
         result = await analyze_single(_make_input())
 
         assert result is not None
-        assert result.predicted_by_model == "gpt-5.4-mini"
+        assert result.predicted_by_model == app_config().agents.smart_model
         assert result.sentiment == "bearish"
         assert mock_llm.call_count == 2
 
@@ -177,7 +178,7 @@ class TestAgentRouting:
         assert langfuse.updates[0][1]["output"] == {
             "label": "bearish",
             "disposition": "stored",
-            "predicted_by_model": "gpt-5.4-nano",
+            "predicted_by_model": app_config().agents.lite_model,
         }
         assert langfuse.updates[0][1]["metadata"] == {
             "junior_label": "bearish",

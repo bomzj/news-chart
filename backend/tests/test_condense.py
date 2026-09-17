@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from src.config import app_config
+
 import pytest
 
 from src.news_collector.condense import _condense_single
@@ -19,5 +21,5 @@ async def test_condense_uses_lite_reasoning_effort():
 
     assert result == "short"
     client_factory.assert_called_once_with()
-    assert create.await_args.kwargs["model"] == "gpt-5.4-nano"
+    assert create.await_args.kwargs["model"] == app_config().agents.lite_model
     assert create.await_args.kwargs["reasoning"] == {"effort": "high"}
