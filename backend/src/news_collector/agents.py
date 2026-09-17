@@ -106,6 +106,14 @@ async def _call_llm(
 ) -> AnalystResult:
     """Call Azure AI via the Responses API and parse JSON response."""
     cfg = app_config().agents
+    match stage:
+        case "junior":
+            effort = cfg.lite_reasoning_effort
+        case "senior":
+            effort = cfg.smart_reasoning_effort
+        case _:
+            raise ValueError(f"Unsupported analyst stage: {stage}")
+
     client = azure_ai_client(cfg.api_version, observe=True)
     tracing_options = {}
     if langfuse_tracing_enabled():
@@ -120,7 +128,7 @@ async def _call_llm(
             {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        reasoning={"effort": cfg.reasoning_effort},
+        reasoning={"effort": effort},
         text={"format": {"type": "json_object"}},
         timeout=120.0,
         **tracing_options,

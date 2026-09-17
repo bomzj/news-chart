@@ -40,6 +40,7 @@ async def _condense_single(text: str, limit: int) -> str:
                 {"role": "system", "content": CONDENSE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
+            reasoning={"effort": cfg.lite_reasoning_effort},
             name="condense-article",
             metadata={"max_output_chars": limit},
             timeout=60.0,

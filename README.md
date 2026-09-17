@@ -288,9 +288,10 @@ dedup:
 
 agents:
   lite_model: gpt-5.4-nano    # Lite model
+  lite_reasoning_effort: high
   smart_model: gpt-5.4-mini  # Smart model
+  smart_reasoning_effort: max
   api_version: "2025-04-01-preview"
-  reasoning_effort: high
 
 embeddings:
   model: text-embedding-3-large

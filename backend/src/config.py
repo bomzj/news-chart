@@ -14,9 +14,10 @@ class DedupConfig(BaseModel):
 
 class AgentsConfig(BaseModel):
     lite_model: str = "gpt-5.4-nano"
+    lite_reasoning_effort: str = "high"
     smart_model: str = "gpt-5.4-mini"
+    smart_reasoning_effort: str = "max"
     api_version: str = "2025-04-01-preview"
-    reasoning_effort: str = "high"
 
 
 class EmbeddingsConfig(BaseModel):

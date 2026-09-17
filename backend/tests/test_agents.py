@@ -209,8 +209,31 @@ async def test_call_llm_uses_observed_client_and_validates_label(monkeypatch):
     assert result.label == "bullish"
     factory.assert_called_once_with("2025-04-01-preview", observe=True)
     assert create.await_args.kwargs["model"] == "gpt-5.4-nano"
+    assert create.await_args.kwargs["reasoning"] == {"effort": "high"}
     assert create.await_args.kwargs["name"] == "classify-news"
     assert create.await_args.kwargs["metadata"] == {"analyst_stage": "junior"}
+
+
+@pytest.mark.asyncio
+async def test_call_llm_uses_smart_reasoning_effort(monkeypatch):
+    create = AsyncMock(
+        return_value=SimpleNamespace(output_text='{"label":"noise"}')
+    )
+    client = SimpleNamespace(responses=SimpleNamespace(create=create))
+    monkeypatch.setattr(
+        "src.news_collector.agents.azure_ai_client",
+        lambda api_version, observe=False: client,
+    )
+    monkeypatch.setattr(
+        "src.news_collector.agents.langfuse_tracing_enabled",
+        lambda: False,
+    )
+
+    result = await _call_llm("gpt-5.4-mini", "article text", stage="senior")
+
+    assert result.label == "noise"
+    assert create.await_args.kwargs["model"] == "gpt-5.4-mini"
+    assert create.await_args.kwargs["reasoning"] == {"effort": "max"}
 
 
 @pytest.mark.asyncio
