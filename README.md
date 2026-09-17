@@ -118,7 +118,7 @@ Extract full text from article URLs (trafilatura)
 Skip articles with unavailable URLs (403, 404, timeout → dropped from collector)
        │
        ▼
-Condense oversized articles (>2000 chars) via the configured LLM with high reasoning effort
+Condense oversized articles (>5000 chars) via the configured LLM with high reasoning effort
        │
        ▼
 Embed all articles (Azure AI batch) ──▶ 256-dim vectors
@@ -298,7 +298,7 @@ embeddings:
 
 collector:
   fetch_news_interval_minutes: 10
-  max_full_text_chars: 2000    # articles longer than this get LLM-summarized
+  max_full_text_chars: 5000    # articles longer than this get LLM-summarized
 
 price_updater:
   deltas: [1h, 24h, 7d, 30d]

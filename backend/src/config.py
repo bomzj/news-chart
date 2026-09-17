@@ -33,7 +33,7 @@ class EmbeddingsConfig(BaseModel):
 
 class CollectorConfig(BaseModel):
     fetch_news_interval_minutes: int = 15 # not used
-    max_full_text_chars: int = 2000
+    max_full_text_chars: int = 5000
 
 
 DeltaWindow = Literal["1h", "24h", "7d", "30d"]

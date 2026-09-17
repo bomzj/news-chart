@@ -1,4 +1,8 @@
-from src.config import load_app_config
+from src.config import CollectorConfig, load_app_config
+
+
+def test_collector_default_limit_is_5000():
+    assert CollectorConfig().max_full_text_chars == 5000
 
 
 def test_load_app_config_uses_collector_and_llm_settings(tmp_path):

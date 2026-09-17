@@ -19,7 +19,7 @@ embeddings:
 
 collector:
   fetch_news_interval_minutes: 10 # not used, since the collector is triggered by a cron job
-  max_full_text_chars: 2000
+  max_full_text_chars: 5000
 
 price_updater:
   deltas:
