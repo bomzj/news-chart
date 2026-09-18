@@ -3,11 +3,12 @@
 ## 1. Core Philosophy & Architecture
 - **Functional Programming:** Strictly use pure functions for business logic. No OOP or logic-bearing classes.
 - **Data Structures Only:** Classes (e.g., `dataclass`, `TypedDict`, `pydantic.BaseModel`) are strictly reserved for data modeling and must contain zero methods.
-- **YAGNI (You Aren't Gonna Need It):** Solve the immediate problem. Strictly avoid premature abstractions, layers, factories, wrappers, or "just in case" patterns. Code should be as simple and concise and direct as possible.
+- **YAGNI (You Aren't Gonna Need It):** Do not Overengineer! Solve the immediate problem. Strictly avoid premature abstractions, layers, factories, wrappers, or "just in case" patterns. Code should be as simple and concise and direct as possible.
 - **Feature Folders:** Organize code by domain/feature, not by technical artifact.
 - **File naming:** Use descriptive names for files that reflect their feature or domain, avoiding technical artifact-based names.
 - **DRY:** Strictly avoid code duplication. Extract reusable pure functions.
 - **Tagged Unions:** Model domain states, events, and distinct data shapes using Tagged Unions (e.g., `TypeA | TypeB` with a literal `type` field discriminator) to enforce precise type-safety across pipelines.
+- **No nesting:** Avoid deeply nested code structures. Prefer early returns, guard clauses, and flat code structures to improve readability and maintainability. No nesting of if, loops, match-case, try-except and so on beyond one level, except for simple comprehensions or context managers. Always strive for flat and readable code.
 
 ## 2. Tech Stack & Tooling
 - **Language:** Python 3.14
