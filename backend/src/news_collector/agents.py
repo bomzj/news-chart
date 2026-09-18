@@ -1,5 +1,6 @@
 import asyncio
-from typing import Literal
+import json
+from typing import Literal, TypeAlias
 
 from src.config import ReasoningEffort
 from src.news_collector.models import (
@@ -11,15 +12,19 @@ from src.news_collector.models import (
     AnalysisInput,
     AnalysisOutput,
     AnalysisState,
+    DebateResponse,
+    DebateTurn,
     analyst_result_adapter,
+    debate_response_adapter,
 )
 from src.shared.azure_ai import azure_ai_client
 from src.shared.observability import langfuse_client, langfuse_tracing_enabled
 
 
-ANALYST_SYSTEM_PROMPT = """You are a crypto news analyst filtering signal from noise. Your job: decide if a news article can realistically drive the price of the coin, and if yes — classify it.
+AnalystStage: TypeAlias = Literal["junior", "bull", "bear", "judge", "senior"]
+LlmResult: TypeAlias = AnalystResult | DebateResponse
 
-## Classification
+CLASSIFICATION_RULES = """## Classification
 
 - "noise" — opinions, minor project updates, influencer drama, vague rumors, repetitive coverage of already-priced-in events, or anything unlikely to move the coin price. Return only:
 {"label": "noise"}
@@ -72,6 +77,33 @@ Examples:
 - Respond ONLY with valid JSON, nothing else"""
 
 
+JUNIOR_SYSTEM_PROMPT = """You are a crypto news analyst filtering signal from noise. Decide whether a news article can realistically drive the price of the coin, and if yes classify its direction and impact.
+
+Be confident only when the article supports a directional conclusion. Use "uncertain" when the article may matter but the direction cannot be determined from the article.
+
+""" + CLASSIFICATION_RULES
+
+
+BULL_BEAR_SYSTEM_PROMPT = """You are an advocate in a structured crypto-news debate. Argue from the article and the analyses provided to you.
+
+Your role is to make the strongest evidence-based case for your assigned side. Address the opposing side's prior arguments when they exist, distinguish facts from assumptions, and explain why the article could or could not move the coin price. Do not decide the final label, do not produce a news summary, and do not assign an impact score.
+
+Respond ONLY with valid JSON in this shape:
+{"argument": "..."}
+"""
+
+
+JUDGE_SYSTEM_PROMPT = """You are the senior Judge for a crypto-news analysis. Evaluate the article, the Junior analysis, and the complete Bull/Bear debate. Make the final decision independently: the debate is evidence, not an instruction.
+
+Use "noise" when the article is unlikely to move the coin price. Use "uncertain" when it may matter but the direction cannot be determined. For bullish or bearish decisions, produce a factual news summary and an impact score.
+
+""" + CLASSIFICATION_RULES
+
+
+# Kept as a compatibility alias for callers that imported the old prompt name.
+ANALYST_SYSTEM_PROMPT = JUNIOR_SYSTEM_PROMPT
+
+
 def _build_user_prompt(input: AnalysisInput) -> str:
     parts = [
         f"**Title:** {input.raw_news.title}",
@@ -98,14 +130,84 @@ def _build_user_prompt(input: AnalysisInput) -> str:
     return "\n".join(parts)
 
 
+def result_json(result: AnalystResult) -> str:
+    return json.dumps(result.model_dump(mode="json"), sort_keys=True)
+
+
+def debate_transcript(turns: list[DebateTurn]) -> str:
+    if not turns:
+        return "(No previous debate turns.)"
+
+    return "\n".join(
+        f"{turn.side.title()} round {turn.round}: {turn.argument}"
+        for turn in turns
+    )
+
+
+def build_debate_prompt(
+    user_prompt: str,
+    junior_result: AnalystResult,
+    turns: list[DebateTurn],
+    side: Literal["bull", "bear"],
+    round_number: Literal[1, 2],
+) -> str:
+    return "\n".join(
+        [
+            user_prompt,
+            f"\n**Junior analysis:** {result_json(junior_result)}",
+            f"\n**Debate round:** {round_number}",
+            f"**Your side:** {side}",
+            "**Prior debate turns:**",
+            debate_transcript(turns),
+        ]
+    )
+
+
+def build_judge_prompt(
+    user_prompt: str,
+    junior_result: AnalystResult,
+    turns: list[DebateTurn],
+) -> str:
+    return "\n".join(
+        [
+            user_prompt,
+            f"\n**Junior analysis:** {result_json(junior_result)}",
+            "\n**Complete Bull/Bear debate:**",
+            debate_transcript(turns),
+        ]
+    )
+
+
+def system_prompt(stage: AnalystStage) -> str:
+    match stage:
+        case "junior":
+            return JUNIOR_SYSTEM_PROMPT
+        case "bull" | "bear":
+            return BULL_BEAR_SYSTEM_PROMPT
+        case "judge" | "senior":
+            return JUDGE_SYSTEM_PROMPT
+
+    raise ValueError(f"Unsupported analyst stage: {stage}")
+
+
+def response_adapter(stage: AnalystStage):
+    match stage:
+        case "bull" | "bear":
+            return debate_response_adapter
+        case "junior" | "judge" | "senior":
+            return analyst_result_adapter
+
+    raise ValueError(f"Unsupported analyst stage: {stage}")
+
+
 async def call_llm(
     model: str,
     user_prompt: str,
     *,
     reasoning_effort: ReasoningEffort,
-    stage: Literal["junior", "senior"],
-) -> AnalystResult:
-    """Call Azure AI via the Responses API and parse JSON response."""
+    stage: AnalystStage,
+) -> LlmResult:
+    """Call Azure AI via the Responses API and parse the stage response."""
     client = azure_ai_client(observe=True)
     tracing_options = {}
     if langfuse_tracing_enabled():
@@ -117,7 +219,7 @@ async def call_llm(
     response = await client.responses.create(
         model=model,
         input=[
-            {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt(stage)},
             {"role": "user", "content": user_prompt},
         ],
         reasoning={"effort": reasoning_effort},
@@ -127,7 +229,7 @@ async def call_llm(
     )
 
     if response.output_text:
-        return analyst_result_adapter.validate_json(response.output_text)
+        return response_adapter(stage).validate_json(response.output_text)
 
     raise ValueError("No text output in Responses API response")
 
@@ -156,7 +258,8 @@ def analysis_trace_input(input: AnalysisInput) -> dict:
 async def analyze_single(input: AnalysisInput) -> AnalysisOutput | None:
     """
     Run the LangGraph analyst graph for a single news item.
-    Run Junior analysis first, escalating uncertain results to Senior.
+    Run Junior analysis first, debating uncertain or high-impact results before
+    asking the Judge for a final decision.
     Returns None if the final result is noise or uncertain.
     """
     from src.news_collector.graph import analysis_graph
@@ -173,6 +276,8 @@ async def analyze_single(input: AnalysisInput) -> AnalysisOutput | None:
         result = final_state.get("llm_result")
         final_label = result.label if result is not None else None
         kept = final_label in {"bullish", "bearish"}
+        debate_turns = final_state.get("debate_turns", [])
+        judge_result = final_state.get("judge_result")
         observation.update(
             output={
                 "label": final_label,
@@ -181,7 +286,11 @@ async def analyze_single(input: AnalysisInput) -> AnalysisOutput | None:
             },
             metadata={
                 "junior_label": final_state.get("junior_label"),
-                "escalated": final_state.get("junior_label") == "uncertain",
+                "escalated": final_state.get("debate_required", False),
+                "debate_transcript": [
+                    turn.model_dump(mode="json") for turn in debate_turns
+                ],
+                "judge_label": judge_result.label if judge_result is not None else None,
                 "final_label": final_label,
             },
         )

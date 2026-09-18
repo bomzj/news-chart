@@ -9,10 +9,12 @@ Crypto news collector that ingests news, deduplicates via semantic vectors, anal
 1. **Ingests news** from MarketAux API for configured crypto tickers (e.g. BTC)
 2. **Deduplicates** using cosine similarity on embeddings — both within the current batch and against the last 24h in the vector DB
 3. **Analyzes & filters** via a LangGraph `StateGraph` (conditional routing):
-   - Junior analyst uses the configured LLM with high reasoning effort to evaluate each news item in parallel
+   - Junior analyst uses the configured LLM with medium reasoning effort to evaluate each news item in parallel
    - Analyst labels each item `noise`, `bullish`, `bearish`, or `uncertain`
-   - Junior `uncertain` results route to Senior analyst using the same LLM with the default max reasoning effort
-   - Noise and unresolved uncertainty are **discarded** (never stored) — only directional signals are kept
+   - Confident directional impact-1 results are kept directly from Junior
+   - Junior `uncertain` or impact-2/3 results enter a four-turn Bull/Bear debate
+   - Bull and Bear use high reasoning effort; the Judge uses max effort to make the final sentiment, impact, and summary decision
+   - Noise, Judge `uncertain`, and Judge `noise` results are **discarded** (never stored) — only final directional signals are kept
 4. **Snapshots price** from Binance perpetual futures at ingestion time
 5. **Stores enriched vectors** in Qdrant Cloud with full metadata
 6. **Backfills realized price deltas** (1h, 24h, 7d, 30d) via a separate cron-triggered endpoint
@@ -141,15 +143,20 @@ Attach similar past news as context (with realized price data)
        │
        ▼
 LangGraph StateGraph (graph.py):
-  ┌─────────────────────────────────────────────────────────┐
-  │ START → junior_analyst (configured LLM, high)           │
-  │           │                                             │
-  │           ├── noise → END (news dropped)                │
-  │           ├── bullish/bearish → END (result kept)       │
-  │           └── uncertain → senior_analyst (configured LLM, max) │
-  │                              ├── bullish/bearish → keep │
-  │                              └── noise/uncertain → drop │
-  └─────────────────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────────────┐
+  │ START → junior_analyst (configured LLM, medium)              │
+  │           │                                                  │
+  │           ├── noise → END (news dropped)                     │
+  │           ├── bullish/bearish impact=1 → END (Junior kept)   │
+  │           └── uncertain or impact=2/3                        │
+  │                 → bull_round_1 (high)                        │
+  │                 → bear_round_1 (high)                        │
+  │                 → bull_round_2 (high)                        │
+  │                 → bear_round_2 (high)                        │
+  │                 → judge_analyst (max)                        │
+  │                    ├── bullish/bearish → keep Judge result  │
+  │                    └── noise/uncertain → drop               │
+  └──────────────────────────────────────────────────────────────┘
   Batch: asyncio.gather over graph.ainvoke() per news item
        │
        ▼
@@ -165,15 +172,17 @@ The `deduplicate-news` parent includes the dedup embedding call, Qdrant
 retrieval observations, and explicit `duplicate-check` observations.
 
 Each analyzed news item also creates an `analyze-news` parent chain. The
-Langfuse Azure OpenAI wrapper records each `classify-news` generation, including
+Langfuse Azure OpenAI wrapper records each analyst generation, including
 the concrete Azure deployment model, prompt, response, latency, token usage,
 and errors. The configured model is `gpt-5.6-luna`. The parent output records
-the Junior label, final label, whether escalation occurred, and whether the
-item was stored or discarded.
+the Junior label, ordered debate transcript when present, Judge label, final
+label, whether escalation occurred, and whether the item was stored or
+discarded. Debate details are observability data only and are not added to the
+Qdrant payload.
 
-The analyst label is a classification, not a probability. No numerical
-confidence score or evaluator score is recorded. Human labels can be added
-later for calibration and quality evaluation.
+The analyst label is a classification, not a probability. “Confident” means a
+Junior bullish/bearish label; no numerical confidence score is recorded.
+Human labels can be added later for calibration and quality evaluation.
 
 The collector records duplicate checks for later threshold and embedding
 evaluation without changing the production deduplication decision. Qdrant audit
@@ -258,10 +267,13 @@ so a slow run cannot multiply requests when the scheduler triggers again.
 ```
 
 **Analyst label:** The internal four-way classifier returns `"noise"`,
-`"bullish"`, `"bearish"`, or `"uncertain"`. Junior uncertainty is sent to the
-Senior analyst. If Senior returns noise or remains uncertain, the article is
-discarded. Only bullish and bearish results are stored, so the Qdrant payload
-and chart API continue to expose binary `sentiment`.
+`"bullish"`, `"bearish"`, or `"uncertain"`. Junior `noise` is discarded
+immediately. Junior bullish/bearish impact-1 results are stored directly;
+Junior `uncertain` or impact-2/3 results enter the alternating Bull/Bear
+debate, followed by the Judge. If the Judge returns `noise` or `uncertain`,
+the article is discarded. Only the final bullish and bearish results are
+stored, so the Qdrant payload and chart API continue to expose binary
+`sentiment`.
 
 **Impact Scale (1-3):**
 
@@ -290,7 +302,9 @@ llm:
   reasoning_effort:
     default: max
     condense: high
-    junior_analysis: high
+    junior_analysis: medium
+    bull_bear: high
+    judge: max
 
 embeddings:
   model: text-embedding-3-large

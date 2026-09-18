@@ -18,7 +18,9 @@ ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 class ReasoningEffortConfig(BaseModel):
     default: ReasoningEffort = "max"
     condense: ReasoningEffort = "high"
-    junior_analysis: ReasoningEffort = "high"
+    junior_analysis: ReasoningEffort = "medium"
+    bull_bear: ReasoningEffort = "high"
+    judge: ReasoningEffort = "max"
 
 
 class LlmConfig(BaseModel):

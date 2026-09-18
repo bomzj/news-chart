@@ -1,15 +1,22 @@
-import pytest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, timezone
+
+import pytest
 
 from src.config import app_config
-from src.shared.types import RawNews
-from src.news_collector.models import AnalysisInput, AnalysisOutput, analyst_result_adapter
 from src.news_collector.agents import analyze_single, call_llm
+from src.news_collector.models import (
+    AnalystResult,
+    AnalysisInput,
+    AnalysisOutput,
+    DebateResponse,
+    analyst_result_adapter,
+)
+from src.shared.types import RawNews
 
 
-class _Observation:
+class ObservationStub:
     def __init__(self, owner, kwargs):
         self.owner = owner
         self.kwargs = kwargs
@@ -24,17 +31,17 @@ class _Observation:
         self.owner.updates.append((self.kwargs, kwargs))
 
 
-class _LangfuseStub:
+class LangfuseStub:
     def __init__(self):
         self.observations = []
         self.updates = []
 
     def start_as_current_observation(self, **kwargs):
         self.observations.append(kwargs)
-        return _Observation(self, kwargs)
+        return ObservationStub(self, kwargs)
 
 
-def _make_input(title: str = "Fed cuts rates") -> AnalysisInput:
+def make_input(title: str = "Fed cuts rates") -> AnalysisInput:
     return AnalysisInput(
         raw_news=RawNews(
             title=title,
@@ -48,144 +55,187 @@ def _make_input(title: str = "Fed cuts rates") -> AnalysisInput:
     )
 
 
-def _result(payload: dict):
+def analyst(payload: dict) -> AnalystResult:
     return analyst_result_adapter.validate_python(payload)
+
+
+def debate(argument: str) -> DebateResponse:
+    return DebateResponse(argument=argument)
+
+
+def assert_reasoning_efforts(mock_llm, expected_stages: list[str], expected_efforts: list[str]):
+    assert [call.kwargs["stage"] for call in mock_llm.call_args_list] == expected_stages
+    assert [
+        call.kwargs["reasoning_effort"] for call in mock_llm.call_args_list
+    ] == expected_efforts
 
 
 @pytest.mark.asyncio
 class TestAgentRouting:
     @patch("src.news_collector.graph.call_llm")
-    async def test_signal_stays_junior(self, mock_llm):
-        """A definitive Junior label is returned directly."""
-        mock_llm.return_value = _result({
-            "label": "bullish",
-            "news_summary": "Fed cuts rates, bullish for crypto",
-            "impact": 3,
-        })
+    async def test_normal_impact_stays_junior(self, mock_llm):
+        mock_llm.return_value = analyst(
+            {
+                "label": "bullish",
+                "news_summary": "Fed cuts rates, bullish for crypto",
+                "impact": 1,
+            }
+        )
 
-        result = await analyze_single(_make_input())
+        result = await analyze_single(make_input())
 
         assert result is not None
-        assert result.predicted_by_model == app_config().llm.name
         assert result.sentiment == "bullish"
+        assert result.impact == 1
+        assert result.predicted_by_model == app_config().llm.name
         assert mock_llm.call_count == 1
-        assert mock_llm.call_args.args[0] == app_config().llm.name
-        assert (
-            mock_llm.call_args.kwargs["reasoning_effort"]
-            == app_config().llm.reasoning_effort.junior_analysis
+        assert_reasoning_efforts(
+            mock_llm,
+            ["junior"],
+            [app_config().llm.reasoning_effort.junior_analysis],
         )
 
     @patch("src.news_collector.graph.call_llm")
-    async def test_uncertain_escalates_to_senior(self, mock_llm):
-        """Junior uncertainty escalates to Senior via LangGraph routing."""
+    async def test_uncertain_runs_alternating_debate_then_judge(self, mock_llm):
         mock_llm.side_effect = [
-            _result({
-                "label": "uncertain",
-            }),
-            _result({
-                "label": "bearish",
-                "news_summary": "After deeper analysis, bearish signal confirmed",
-                "impact": 2,
-            }),
+            analyst({"label": "uncertain"}),
+            debate("Bull round 1"),
+            debate("Bear rebuts Bull"),
+            debate("Bull responds"),
+            debate("Bear closes"),
+            analyst(
+                {
+                    "label": "bearish",
+                    "news_summary": "The final Judge found a bearish signal",
+                    "impact": 2,
+                }
+            ),
         ]
 
-        result = await analyze_single(_make_input())
+        result = await analyze_single(make_input())
 
         assert result is not None
-        assert result.predicted_by_model == app_config().llm.name
         assert result.sentiment == "bearish"
-        assert mock_llm.call_count == 2
-        junior_call, senior_call = mock_llm.call_args_list
-        assert junior_call.args[0] == app_config().llm.name
-        assert (
-            junior_call.kwargs["reasoning_effort"]
-            == app_config().llm.reasoning_effort.junior_analysis
+        assert result.news_summary == "The final Judge found a bearish signal"
+        assert result.impact == 2
+        assert mock_llm.call_count == 6
+        assert_reasoning_efforts(
+            mock_llm,
+            ["junior", "bull", "bear", "bull", "bear", "judge"],
+            [
+                app_config().llm.reasoning_effort.junior_analysis,
+                app_config().llm.reasoning_effort.bull_bear,
+                app_config().llm.reasoning_effort.bull_bear,
+                app_config().llm.reasoning_effort.bull_bear,
+                app_config().llm.reasoning_effort.bull_bear,
+                app_config().llm.reasoning_effort.judge,
+            ],
         )
-        assert senior_call.args[0] == app_config().llm.name
-        assert (
-            senior_call.kwargs["reasoning_effort"]
-            == app_config().llm.reasoning_effort.default
-        )
+
+        debate_prompts = [
+            call.args[1] for call in mock_llm.call_args_list[1:5]
+        ]
+        assert "No previous debate turns." in debate_prompts[0]
+        assert "Bull round 1" in debate_prompts[1]
+        assert "Bear rebuts Bull" in debate_prompts[2]
+        assert "Bull responds" in debate_prompts[3]
+        judge_prompt = mock_llm.call_args_list[5].args[1]
+        assert "Junior analysis" in judge_prompt
+        assert all(argument in judge_prompt for argument in [
+            "Bull round 1",
+            "Bear rebuts Bull",
+            "Bull responds",
+            "Bear closes",
+        ])
+
+    @pytest.mark.parametrize("impact", [2, 3])
+    @patch("src.news_collector.graph.call_llm")
+    async def test_high_or_extreme_impact_enters_debate(self, mock_llm, impact):
+        mock_llm.side_effect = [
+            analyst(
+                {
+                    "label": "bullish",
+                    "news_summary": "Junior directional result",
+                    "impact": impact,
+                }
+            ),
+            debate("Bull round 1"),
+            debate("Bear round 1"),
+            debate("Bull round 2"),
+            debate("Bear round 2"),
+            analyst(
+                {
+                    "label": "bullish",
+                    "news_summary": "Judge directional result",
+                    "impact": 3,
+                }
+            ),
+        ]
+
+        result = await analyze_single(make_input())
+
+        assert result is not None
+        assert result.news_summary == "Judge directional result"
+        assert result.impact == 3
+        assert mock_llm.call_count == 6
 
     @patch("src.news_collector.graph.call_llm")
-    async def test_output_schema_valid(self, mock_llm):
-        """Output conforms to AnalysisOutput schema."""
-        mock_llm.return_value = _result({
-            "label": "bullish",
-            "news_summary": "Summary text here",
-            "impact": 3,
-        })
+    async def test_noise_returns_none_without_debate(self, mock_llm):
+        mock_llm.return_value = analyst({"label": "noise"})
 
-        result = await analyze_single(_make_input())
+        result = await analyze_single(make_input())
 
-        assert isinstance(result, AnalysisOutput)
-        assert result.sentiment in ("bullish", "bearish")
-        assert 1 <= result.impact <= 3
-        assert len(result.news_summary) <= 400
+        assert result is None
+        assert mock_llm.call_count == 1
+
+    @pytest.mark.parametrize("label", ["noise", "uncertain"])
+    @patch("src.news_collector.graph.call_llm")
+    async def test_judge_noise_or_uncertain_returns_none(self, mock_llm, label):
+        mock_llm.side_effect = [
+            analyst({"label": "uncertain"}),
+            debate("Bull round 1"),
+            debate("Bear round 1"),
+            debate("Bull round 2"),
+            debate("Bear round 2"),
+            analyst({"label": label}),
+        ]
+
+        result = await analyze_single(make_input())
+
+        assert result is None
+        assert mock_llm.call_count == 6
 
     @patch("src.news_collector.graph.call_llm")
     async def test_summary_truncated_to_400_chars(self, mock_llm):
-        """Summary longer than 400 chars gets truncated."""
-        mock_llm.return_value = _result({
-            "label": "bullish",
-            "news_summary": "x" * 500,
-            "impact": 1,
-        })
+        mock_llm.return_value = analyst(
+            {
+                "label": "bullish",
+                "news_summary": "x" * 500,
+                "impact": 1,
+            }
+        )
 
-        result = await analyze_single(_make_input())
+        result = await analyze_single(make_input())
+
         assert result is not None
         assert len(result.news_summary) <= 400
 
     @patch("src.news_collector.graph.call_llm")
-    async def test_noise_returns_none(self, mock_llm):
-        """LLM returning noise results in None."""
-        mock_llm.return_value = _result({"label": "noise"})
+    async def test_analysis_trace_records_direct_disposition(self, mock_llm, monkeypatch):
+        langfuse = LangfuseStub()
+        monkeypatch.setattr(
+            "src.news_collector.agents.langfuse_client",
+            lambda: langfuse,
+        )
+        mock_llm.return_value = analyst(
+            {
+                "label": "bearish",
+                "news_summary": "Exchange withdrawals are frozen",
+                "impact": 1,
+            }
+        )
 
-        result = await analyze_single(_make_input())
-
-        assert result is None
-        assert mock_llm.call_count == 1
-
-    @patch("src.news_collector.graph.call_llm")
-    async def test_senior_noise_returns_none(self, mock_llm):
-        """If Junior is uncertain and Senior returns noise, the result is discarded."""
-        mock_llm.side_effect = [
-            _result({
-                "label": "uncertain",
-            }),
-            _result({"label": "noise"}),
-        ]
-
-        result = await analyze_single(_make_input())
-
-        assert result is None
-        assert mock_llm.call_count == 2
-
-    @patch("src.news_collector.graph.call_llm")
-    async def test_senior_uncertain_returns_none(self, mock_llm):
-        """If Senior remains uncertain, the result is discarded."""
-        mock_llm.side_effect = [
-            _result({"label": "uncertain"}),
-            _result({"label": "uncertain"}),
-        ]
-
-        result = await analyze_single(_make_input())
-
-        assert result is None
-        assert mock_llm.call_count == 2
-
-    @patch("src.news_collector.graph.call_llm")
-    async def test_analysis_trace_records_disposition(self, mock_llm, monkeypatch):
-        """The parent Langfuse observation records labels and final disposition."""
-        langfuse = _LangfuseStub()
-        monkeypatch.setattr("src.news_collector.agents.langfuse_client", lambda: langfuse)
-        mock_llm.return_value = _result({
-            "label": "bearish",
-            "news_summary": "Exchange withdrawals are frozen",
-            "impact": 2,
-        })
-
-        result = await analyze_single(_make_input())
+        result = await analyze_single(make_input())
 
         assert result is not None
         assert len(langfuse.observations) == 1
@@ -199,6 +249,8 @@ class TestAgentRouting:
         assert langfuse.updates[0][1]["metadata"] == {
             "junior_label": "bearish",
             "escalated": False,
+            "debate_transcript": [],
+            "judge_label": None,
             "final_label": "bearish",
         }
 
@@ -237,9 +289,9 @@ async def test_call_llm_uses_observed_client_and_validates_label(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_call_llm_passes_explicit_max_reasoning_effort(monkeypatch):
+async def test_call_llm_validates_debate_response(monkeypatch):
     create = AsyncMock(
-        return_value=SimpleNamespace(output_text='{"label":"noise"}')
+        return_value=SimpleNamespace(output_text='{"argument":"Evidence supports the bull case"}')
     )
     client = SimpleNamespace(responses=SimpleNamespace(create=create))
     monkeypatch.setattr(
@@ -254,8 +306,32 @@ async def test_call_llm_passes_explicit_max_reasoning_effort(monkeypatch):
     result = await call_llm(
         app_config().llm.name,
         "article text",
+        reasoning_effort="high",
+        stage="bull",
+    )
+
+    assert result == DebateResponse(argument="Evidence supports the bull case")
+    assert create.await_args.kwargs["reasoning"] == {"effort": "high"}
+
+
+@pytest.mark.asyncio
+async def test_call_llm_passes_explicit_max_reasoning_effort(monkeypatch):
+    create = AsyncMock(return_value=SimpleNamespace(output_text='{"label":"noise"}'))
+    client = SimpleNamespace(responses=SimpleNamespace(create=create))
+    monkeypatch.setattr(
+        "src.news_collector.agents.azure_ai_client",
+        lambda *, observe=False: client,
+    )
+    monkeypatch.setattr(
+        "src.news_collector.agents.langfuse_tracing_enabled",
+        lambda: False,
+    )
+
+    result = await call_llm(
+        app_config().llm.name,
+        "article text",
         reasoning_effort="max",
-        stage="senior",
+        stage="judge",
     )
 
     assert result.label == "noise"
@@ -265,11 +341,7 @@ async def test_call_llm_passes_explicit_max_reasoning_effort(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_call_llm_omits_langfuse_options_when_tracing_is_disabled(monkeypatch):
-    create = AsyncMock(
-        return_value=SimpleNamespace(
-            output_text='{"label":"noise"}'
-        )
-    )
+    create = AsyncMock(return_value=SimpleNamespace(output_text='{"label":"noise"}'))
     client = SimpleNamespace(responses=SimpleNamespace(create=create))
     client_factory = patch(
         "src.news_collector.agents.azure_ai_client",
@@ -296,10 +368,15 @@ async def test_call_llm_omits_langfuse_options_when_tracing_is_disabled(monkeypa
 
 class TestGraphCompilation:
     def test_graph_compiles_and_has_expected_nodes(self):
-        """The LangGraph analyst graph compiles with correct node structure."""
         from src.news_collector.graph import analysis_graph
 
         graph_nodes = analysis_graph.get_graph().nodes
         node_ids = set(graph_nodes.keys())
-        assert "junior_analyst" in node_ids
-        assert "senior_analyst" in node_ids
+        assert {
+            "junior_analyst",
+            "bull_round_1",
+            "bear_round_1",
+            "bull_round_2",
+            "bear_round_2",
+            "judge_analyst",
+        } <= node_ids

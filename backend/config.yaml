@@ -11,7 +11,9 @@ llm:
   reasoning_effort:
     default: max
     condense: high
-    junior_analysis: high
+    junior_analysis: medium
+    bull_bear: high
+    judge: max
 
 embeddings:
   model: text-embedding-3-large

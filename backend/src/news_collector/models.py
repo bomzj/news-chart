@@ -37,6 +37,19 @@ AnalystResult: TypeAlias = Annotated[
 analyst_result_adapter = TypeAdapter(AnalystResult)
 
 
+class DebateResponse(BaseModel):
+    argument: str
+
+
+class DebateTurn(BaseModel):
+    side: Literal["bull", "bear"]
+    round: Literal[1, 2]
+    argument: str
+
+
+debate_response_adapter = TypeAdapter(DebateResponse)
+
+
 class AnalysisOutput(BaseModel):
     news_summary: str
     sentiment: Sentiment
@@ -48,5 +61,9 @@ class AnalysisState(TypedDict, total=False):
     """LangGraph state flowing through the analyst graph."""
     user_prompt: str
     llm_result: AnalystResult | None
+    junior_result: AnalystResult | None
+    debate_turns: list[DebateTurn]
+    judge_result: AnalystResult | None
+    debate_required: bool
     junior_label: AnalysisLabel | None
     predicted_by_model: str
