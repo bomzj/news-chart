@@ -9,6 +9,7 @@
 - **DRY:** Strictly avoid code duplication. Extract reusable pure functions.
 - **Tagged Unions:** Model domain states, events, and distinct data shapes using Tagged Unions (e.g., `TypeA | TypeB` with a literal `type` field discriminator) to enforce precise type-safety across pipelines.
 - **No nesting:** Avoid deeply nested code structures. Prefer early returns, guard clauses, and flat code structures to improve readability and maintainability. No nesting of if, loops, match-case, try-except and so on beyond one level, except for simple comprehensions or context managers. Always strive for flat and readable code.
+- **DDD & Ubiquitous Language:** Model the business domain, not the infrastructure. Name pure data structures using exact domain terminology (e.g., MarketParticipant or ExecutionOrder, never generic fallbacks like User, System, or Data). Pure functions transforming these structures must express real-world business intent (e.g., liquidate_position(state), not update_status(state)). Strictly ban technical jargon (Manager, DTO, Helper, Record) from domain types.
 
 ## 2. Tech Stack & Tooling
 - **Language:** Python 3.14
